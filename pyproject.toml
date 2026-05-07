@@ -1,0 +1,7 @@
+[project]
+name = "physmod-ml-course"
+version = "0.1.0"
+description = "Slides and notebooks for the Differentiable Physical Modelling and Machine Learning for Sound Synthesis course."
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = []

@@ -1,0 +1,5 @@
+index_files/
+animations/
+/.quarto/
+**/*.quarto_ipynb
+media

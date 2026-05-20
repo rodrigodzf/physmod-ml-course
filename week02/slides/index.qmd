@@ -1,0 +1,866 @@
+---
+title: "Modal and Finite-Difference Methods"
+subtitle: "Differentiable Physical Modelling and Machine Learning for Sound Synthesis"
+author: "Rodrigo Diaz"
+date: "2026-05-14"
+resources:
+  - "animations/media/videos/**/*.mp4"
+execute-dir: file
+execute:
+  cache: false
+  warning: false
+format:
+  revealjs:
+    theme: dark
+    slide-number: true
+    chalkboard: true
+    smaller: true
+    scrollable: true
+    code-fold: false
+    code-overflow: wrap
+    highlight-style: github
+    footer: "Week 2 -- Modal and Finite-Difference Methods"
+    transition: fade
+    math: mathjax
+    # html-math-method: mathjax
+    auto-play-media: false
+    include-in-header:
+      - text: |
+          <style>
+          .op-c  { color: #ff6b6b; }   /* operators    */
+          .x-c   { color: #f1c40f; }   /* spatial vars */
+          .t-c   { color: #5dade2; }   /* time vars    */
+          .eig-c { color: #ff79c6; }   /* eigenvalues  */
+          </style>
+          <script type="text/x-mathjax-config">
+          MathJax.Hub.Config({
+            TeX: {
+              extensions: ["color.js"],
+              Macros: {
+                op:   ["{\\color[RGB]{255,107,107}{#1}}", 1],
+                xvar: ["{\\color[RGB]{241,196,15}{#1}}",  1],
+                tvar: ["{\\color[RGB]{93,173,226}{#1}}",  1],
+                eig:  ["{\\color[RGB]{255,121,198}{#1}}", 1]
+              }
+            }
+          });
+          </script>
+---
+
+## Overview
+
+::: {.incremental}
+- Recap and a gentler look at the wave equation
+- Separation of variables and basis expansion
+- Two ways to discretise the spatial operator
+- Modal view: eigenvalue problem and mode shapes
+- From modes to state-space ODEs
+- **Short coding activity (laptops open)**
+- 2D preview: membranes and plates
+- FDTD: the same operator on a grid
+- Stability and the CFL condition
+- Modal vs FDTD: when to use which
+:::
+
+::: {.notes}
+This week we turn last week's abstract state-space recursion into a concrete recipe. Two routes to the same state-space form: modal (global eigenfunction basis) and FDTD (local grid basis). The activity sits between the two halves.
+:::
+
+# Recap and the Wave Equation
+
+## Where we left off
+
+Week 1 closed with the run-time recursion:
+
+$$
+\begin{aligned}
+\mathbf h_{n+1} &= \mathbf A\, \mathbf h_n + \mathbf b\, f_n \\
+\mathbf y_n &= \mathbf C\, \mathbf h_n
+\end{aligned}
+$$
+
+. . .
+
+But we never actually built $\mathbf A$.
+
+. . .
+
+**This week:** two recipes to construct $\mathbf A$ from the PDE. They differ in the basis we choose to represent the spatial field.
+
+## The 1D Wave Equation
+
+The ideal vibrating string (week 1):
+
+$$\tvar{\partial^2_t}\, w = \hat T^2\, \op{\partial^2_x}\, w, \quad x \in [0, 1]$$
+
+. . .
+
+State is the field $w(x,t)$ -- a function of both space and time. Time evolution and spatial shape are **tangled together** in this PDE.
+
+. . .
+
+**Plan:** separate space from time, expand each in a basis of simple functions, then re-assemble.
+
+## Separation of Variables
+
+<video src="animations/media/videos/separation_of_variables/1440p60/SeparationOfVariables.mp4" controls style="width: 100%; max-height: 80vh; display: block; margin: 0 auto;"></video>
+
+## Basis Expansion
+
+The superposition is already a **basis expansion in space**. Rename for the rest of the lecture:
+
+$$F_\mu(x) \;\longrightarrow\; \phi_\mu(x), \qquad G_\mu(t) \;\longrightarrow\; q_\mu(t)$$
+
+. . .
+
+$$\boxed{\;w(x,t) = \sum_\mu \phi_\mu(x)\, q_\mu(t)\;}$$
+
+. . .
+
+**Claim:** functions in the relevant function space can be represented exactly with an **infinite** complete basis.
+
+::: {.fragment}
+Here: finite-energy string shapes on $[0,L]$ that satisfy the boundary conditions. Smooth functions can be **approximated** with a **finite** set. The smoother the function, the fewer terms you need.
+:::
+
+. . .
+
+The choice of spatial representation is what distinguishes **modal synthesis** (global eigenfunctions) from **FDTD** (local grid samples, or local interpolation functions if we use basis language). The amplitudes $q_\mu(t)$ obey ODEs we derive from the PDE -- time discretisation comes later, when we do FDTD time-stepping.
+
+## Separation + Basis Expansion {style="font-size: 0.85em;"}
+
+<video src="animations/media/videos/basis_expansion/1440p60/BasisExpansion.mp4" controls style="width: 100%; max-height: 80vh; display: block; margin: 0 auto;"></video>
+
+## Local vs Global Basis Functions
+
+<video src="animations/media/videos/basis_comparison/1440p60/BasisComparison.mp4" controls style="width: 100%; max-height: 80vh; display: block; margin: 0 auto;"></video>
+
+## A Teaser: Learn the Basis {style="font-size: 0.9em;"}
+
+Modal and FDTD both pick a **fixed** spatial basis. A shallow fully-connected network with one hidden layer is itself a basis expansion:
+
+$$\phi_n(x) = \sum_{j=1}^{m} A_{nj}\, \sigma(w_j x + b_j)$$
+
+. . .
+
+| Activation $\sigma$ | Basis shape | Character |
+|---|---|---|
+| ReLU | piecewise-linear segments (3+ neurons build a hat) | local-capable |
+| sin | sinusoid at learned frequency $w_j$ | global-like |
+| tanh, GELU, ... | smooth localised bumps | mixed |
+
+: {.striped}
+
+. . .
+
+With $\sigma = \sin$ this is a **SIREN trunk**: a finite sinusoidal dictionary with frequencies $w_j$ and phases $b_j$ as learnable parameters. The analytical sine basis $\sin(\mu\pi x/L)$ is a special case with **fixed integer frequencies** and **zero phase**. Here the optimiser is free to pick non-integer $w_j$ and arbitrary $b_j$.
+
+## A Teaser: From Network to Modal ODEs {style="font-size: 0.85em;"}
+
+`week02/notebooks/modal_identification.py` fits the modal expansion directly to grid data $U \in \mathbb R^{N_x \times T}$:
+
+$$u(x, t) = \sum_{n=1}^{N} \phi_n(x;\theta)\, \bigl[\, e^{-\gamma_n t}\!\left(a_n\cos\omega_n t + b_n\sin\omega_n t\right)\bigr]$$
+
+. . .
+
+Jointly identified:
+
+- spatial modes $\phi_n(x;\theta)$: shallow sin-network multiplied by $x(L-x)/L^2$ so Dirichlet ends are exact
+- modal frequencies $\omega_n$, damping $\gamma_n = \mathrm{softplus}(\tilde\gamma_n) \ge 0$ (poles $s_n = -\gamma_n \pm i\omega_n$ stay in the left half $s$-plane)
+- amplitudes $a_n, b_n$ encoding the initial condition
+
+. . .
+
+The analytical sine basis is a hard-coded special case with fixed $w_j$ and $b_j$. The network lets the data choose those numbers.
+
+# Two Ways to Discretise
+
+## Two Strategies for $\mathcal L$
+
+The spatial operator $\mathcal L = \hat T^2\, \op{\partial^2_x}$ (later: $\hat T^2 \op{\partial^2_x} - \hat D^2 \op{\partial^4_x}$, $\Delta$, $\Delta^2$, ...) is what we need to represent on a computer.
+
+. . .
+
+:::: {.columns}
+
+::: {.column width="50%"}
+### Project the PDE (Modal)
+
+Expand $w(x,t) = \sum_\mu \phi_\mu(x)\, q_\mu(t)$ and project the PDE onto $\{\phi_\mu\}$.
+
+Pick $\phi_\mu$ = **eigenfunctions** of the spatial derivative operator $\Rightarrow$ operator becomes **scalar multiplication** by $-\eig{\lambda_\mu^2}$.
+
+State: mode amplitudes $q_\mu(t)$.
+:::
+
+::: {.column width="50%"}
+### Discretise the operator (FDTD)
+
+Sample the field at grid points $x_i$ and replace $\partial^2_x$ with a finite-difference stencil.
+
+$\mathcal L$ becomes a **sparse banded** matrix acting on the vector $\mathbf w(t) = [w(x_i, t)]$.
+
+State: grid values $w(x_i, t)$.
+:::
+
+::::
+
+. . .
+
+Today: modal first, FDTD second.
+
+## And Time? Finite Differences Either Way {style="font-size: 0.9em;"}
+
+Both routes leave us with second-order ODEs in time:
+
+- Modal: $\ddot q_\mu + 2\gamma_\mu \dot q_\mu + \omega_\mu^2 q_\mu = b_\mu f(t)$ (one scalar ODE per mode)
+- FDTD: $\ddot{\mathbf w}(t) = \hat T^2\, \mathbf D_{xx}\, \mathbf w(t) + \mathbf b\, f(t)$ (coupled grid ODE)
+
+. . .
+
+We discretise time the same way we discretised space (in the FDTD case): replace $\partial^2_t$ with a centred second difference.
+
+. . .
+
+**Störmer-Verlet / leapfrog** for $\ddot q = F(q)$:
+
+$$\frac{q^{n+1} - 2 q^n + q^{n-1}}{\Delta t^2} = F(q^n) \quad\Longleftrightarrow\quad q^{n+1} = 2 q^n - q^{n-1} + \Delta t^2\, F(q^n)$$
+
+. . .
+
+Two-step, explicit, symplectic for conservative systems. Stack $(q^n, q^{n-1})$ and we are back at $\mathbf h_{n+1} = \mathbf A\, \mathbf h_n + \mathbf b\, f_n$ from week 1.
+
+# The Spatial Operator: Modal View
+
+## Eigenvalue Problem
+
+We want a basis that makes the spatial derivative operator $\op{\partial^2_x}$ act diagonally. Pick $\xvar{\phi_\mu}$ to satisfy
+
+$$\op{\partial^2_x}\, \xvar{\phi_\mu(x)} \;=\; -\,\eig{\lambda_\mu^2}\, \xvar{\phi_\mu(x)}$$
+
+[**operator**]{.op-c} acting on an [**eigenfunction**]{.x-c} returns the same eigenfunction scaled by an [**eigenvalue**]{.eig-c} (squared, so that $\eig{\lambda_\mu}$ carries units of a wave number).
+
+. . .
+
+**Boundary conditions are part of the operator** -- they pick which $\xvar{\phi_\mu}$ are admissible. Dirichlet, Neumann, mixed all give different spectra.
+
+. . .
+
+Ideal Dirichlet string ($\xvar{\phi_\mu(0) = \phi_\mu(L) = 0}$):
+
+$$\xvar{\phi_\mu(x) = \sin\!\left(\frac{\mu\pi x}{L}\right)}, \qquad \eig{\lambda_\mu = \frac{\mu\pi}{L}}, \qquad \mu = 1, 2, 3, \dots$$
+
+. . .
+
+The natural frequencies are $\tvar{\omega_\mu} = \hat T\, \eig{\lambda_\mu} = \hat T\, \mu\pi/L$ -- a harmonic series.
+
+## Mode Shapes
+
+::: {.callout-note}
+**Animation placeholder #3.** First five sine modes $\phi_\mu(x)$ drawn one at a time with labels $\mu$ and $\omega_\mu$, then plotted together. File: `images/mode_shapes_buildup.mp4`.
+:::
+
+<!--
+<video src="images/mode_shapes_buildup.mp4" controls style="width: 100%; max-height: 65vh; display: block; margin: 0 auto;"></video>
+-->
+
+. . .
+
+The $\phi_\mu$ are **orthogonal** under the standard inner product on $[0, L]$:
+
+$$\langle \phi_\mu, \phi_\nu \rangle = \int_0^L \phi_\mu(x)\, \phi_\nu(x)\, dx = \tfrac{L}{2}\, \delta_{\mu\nu}$$
+
+. . .
+
+This is how we extract coefficients $a_\mu$ from a given shape: project onto the basis.
+
+## Generalise the Operator: Add Stiffness
+
+The stiff string from week 1:
+
+$$\tvar{\partial^2_t}\, w \;=\; \hat T^2\, \op{\partial^2_x}\, w \;-\; \hat D^2\, \op{\partial^4_x}\, w$$
+
+The spatial operator gains a [**fourth derivative**]{.op-c}.
+
+. . .
+
+Same recipe, same boundary conditions. Sines still diagonalise both pieces:
+
+$$\op{\partial^2_x}\, \xvar{\phi_\mu} = -\,\eig{\lambda_\mu^2}\, \xvar{\phi_\mu}, \qquad \op{\partial^4_x}\, \xvar{\phi_\mu} = +\,\eig{\lambda_\mu^4}\, \xvar{\phi_\mu}$$
+
+. . .
+
+For simply-supported ends the eigenfunctions are still sines, but the spectrum shifts:
+
+$$\tvar{\omega_\mu^2} \;=\; \hat T^2\, \eig{\lambda_\mu^2} \;+\; \hat D^2\, \eig{\lambda_\mu^4}, \qquad \eig{\lambda_\mu} = \frac{\mu\pi}{L}$$
+
+. . .
+
+The high modes are pushed up disproportionately $\to$ **inharmonicity**.
+
+## Stiffness $\to$ Inharmonicity
+
+::: {.callout-note}
+**Animation placeholder #4.** Slider for $\hat D$: at $\hat D = 0$, $\omega_\mu$ vs $\mu$ is a straight line; as $\hat D$ ramps up the line bows upward. File: `images/stiffness_toggle.mp4`.
+:::
+
+<!--
+<video src="images/stiffness_toggle.mp4" controls style="width: 100%; max-height: 65vh; display: block; margin: 0 auto;"></video>
+-->
+
+. . .
+
+This is the inharmonicity we heard in the stage-2 plot of `progressive_string.py` last week.
+
+# Modal ODEs and State-space Form
+
+## Projection onto the Modal Basis
+
+**Inverse transform** -- sum over the **discrete** mode index $\mu$:
+
+$$w(x,t) = \sum_\mu \xvar{\phi_\mu(x)}\, \tvar{q_\mu(t)}$$
+
+. . .
+
+**Forward transform** -- integrate the field against each mode:
+
+$$\begin{aligned}
+\tvar{q_\mu(t)} &= \frac{1}{N_\mu} \int_\Omega w(x,t)\, \xvar{\phi_\mu(x)}\, dx \\[4pt]
+                &= \frac{1}{N_\mu}\, \bigl\langle w(\cdot, t),\, \xvar{\phi_\mu} \bigr\rangle
+\end{aligned}$$
+
+. . .
+
+Two readings of the same operation:
+
+- **Projection** of $w(\cdot, t)$ onto $\xvar{\phi_\mu}$ -- orthogonality of $\{\xvar{\phi_\mu}\}$ makes the picture exact.
+- **Integral transform** with kernel $\xvar{\phi_\mu(x)}$. Here $\xvar{\phi_\mu(x) = \sin(\mu\pi x/L)}$, so this is (a discrete-mode) sine transform.
+
+## Projection onto the Modal Basis
+
+Insert $w(x,t) = \sum_\mu \phi_\mu(x)\, q_\mu(t)$ into the forced damped wave equation:
+
+$$\sum_\mu \phi_\mu(x)\, \ddot q_\mu(t) = \hat T^2 \sum_\mu \partial^2_x\phi_\mu(x)\, q_\mu(t) + \dots$$
+
+. . .
+
+Use $\op{\partial^2_x}\xvar{\phi_\mu} = -\eig{\lambda_\mu^2}\xvar{\phi_\mu}$, take the inner product with $\phi_\nu$, and orthogonality kills the cross-terms:
+
+$$\boxed{\;\ddot q_\mu + 2\gamma_\mu\, \dot q_\mu + \omega_\mu^2\, q_\mu = b_\mu\, f(t)\;}$$
+
+. . .
+
+| Quantity | Role |
+|----------|------|
+| $\tvar{\omega_\mu^2} = \hat T^2 \eig{\lambda_\mu^2} \,(+ \hat D^2 \eig{\lambda_\mu^4})$ | Modal frequency squared |
+| $2\gamma_\mu$ | Modal damping coefficient (next slide) |
+| $b_\mu = \phi_\mu(x_\text{in}) / \lVert \phi_\mu \rVert^2$ | Input projection |
+| $q_\mu(t)$ | Modal amplitude (scalar ODE per mode) |
+
+: {.striped}
+
+## Damping per Mode
+
+Each loss term from week 1 projects cleanly onto the modal basis.
+
+. . .
+
+| PDE term | Modal contribution to $2\gamma_\mu$ |
+|----------|---------------------------|
+| $-\hat d_1 \, \partial_t w$ | $2\gamma_\mu \mathrel{+}= \hat d_1$ |
+| $+\hat d_3 \, \partial_t \op{\partial^2_x} w$ | $2\gamma_\mu \mathrel{+}= \hat d_3 \eig{\lambda_\mu^2}$ |
+
+: {.striped}
+
+. . .
+
+So $2\gamma_\mu = \hat d_1 + \hat d_3\, \eig{\lambda_\mu^2}$.
+
+. . .
+
+Frequency-dependent damping ($\hat d_3$) becomes a per-mode damping coefficient -- **for free**, just from the projection. High modes decay faster, exactly what real strings do.
+
+## Output Map and State-space Form
+
+The output at readout position $x_\text{out}$ is the field sampled at that point:
+
+$$y(t) = w(x_\text{out}, t) = \sum_\mu \phi_\mu(x_\text{out})\, q_\mu(t)$$
+
+. . .
+
+Stack the modal amplitudes and their derivatives into a state vector:
+
+$$\mathbf h = \begin{bmatrix} \mathbf q \\ \dot{\mathbf q} \end{bmatrix} \in \mathbb R^{2N}, \qquad \dot{\mathbf h} = \mathbf A\, \mathbf h + \mathbf b\, f(t), \qquad y = \mathbf C\, \mathbf h$$
+
+. . .
+
+$$\mathbf A = \begin{bmatrix} \mathbf 0 & \mathbf I \\ -\boldsymbol\Omega^2 & -2\boldsymbol\Gamma \end{bmatrix}, \qquad \boldsymbol\Omega = \mathrm{diag}(\omega_\mu), \quad \boldsymbol\Gamma = \mathrm{diag}(\gamma_\mu)$$
+
+Here $\boldsymbol\Omega$ and $\boldsymbol\Gamma$ are **real diagonal** matrices; complex modal poles appear as eigenvalues of $\mathbf A$, not as entries of $\boldsymbol\Omega$.
+
+. . .
+
+For a point force at $x_\text{in}$ and one readout at $x_\text{out}$:
+
+$$\mathbf b = \begin{bmatrix} \mathbf 0 \\ \mathbf b_q \end{bmatrix}, \qquad (\mathbf b_q)_\mu = \frac{\phi_\mu(x_\text{in})}{\lVert \phi_\mu\rVert^2}, \qquad \mathbf C = \begin{bmatrix} \phi_1(x_\text{out}) & \cdots & \phi_N(x_\text{out}) & 0 & \cdots & 0 \end{bmatrix}$$
+
+. . .
+
+$\mathbf A$ is **block-diagonal** in mode pairs $\to$ the $N$ modal ODEs decouple completely. Embarrassingly parallel.
+
+## Tie-back: progressive_string.py
+
+Week 1's notebook was already this recipe:
+
+```python
+lambda_mu_squared = string_eigenvalues(n_modes, base_params.length)
+lambda_mu = np.sqrt(lambda_mu_squared)
+K = string_eigenfunctions(lambda_mu, grid)
+```
+
+. . .
+
+```python
+gamma2_mu = damping_term(params, lambda_mu_squared)          # 2 * gamma_mu
+omega_mu_squared = stiffness_term(params, lambda_mu_squared) # omega_mu^2
+```
+
+. . .
+
+```python
+_, modal_sol, _ = solve_tf(
+    gamma2_mu, omega_mu_squared,
+    dt=dt, n_steps=n_steps,
+    nl_fn=nl_fn, u0=u0, v0=jnp.zeros_like(u0),
+)
+modal_sol = modal_sol.T          # (n_modes, n_steps)
+return readout_weights @ modal_sol
+```
+
+. . .
+
+Same equations, same state-space, just JAX'd.
+
+# Mid-Session Activity
+
+## Eigenvalues {style="font-size: 0.85em;"}
+
+::: {.incremental}
+- **Part 1 (~7 min).** Compute $\lambda_\mu = \mu\pi/L$ and $\lambda_\mu^2 = (\mu\pi/L)^2$ for the ideal Dirichlet string. Plot the first 5 mode shapes $\phi_\mu(x) = \sin(\mu\pi x/L)$.
+- **Part 2 (~8 min).** Add stiffness ($\hat D \ne 0$). Recompute $\omega_\mu^2 = \hat T^2(\mu\pi/L)^2 + \hat D^2(\mu\pi/L)^4$. Plot $\omega_\mu$ vs $\mu$ -- the line bows upward.
+- **Optional.** Build the tridiagonal second-difference matrix $\mathbf D_{xx}$ with stencil $[1,-2,1]/\Delta x^2$. Compute its eigenvalues and plot them against mode index. What shape do you see? How does it compare with the closed-form $-\lambda_\mu^2$?
+:::
+
+# 2D Preview: Membranes and Plates
+
+## Same Recipe, New Domain
+
+The recipe is identical: solve the eigenvalue problem for the spatial operator on the new domain.
+
+. . .
+
+**Square Dirichlet membrane** ($\partial^2_t w = \hat T^2 \Delta w$ on $[0, L_x]\times[0, L_y]$):
+
+$$\phi_{m,n}(x,y) = \sin\!\left(\frac{m\pi x}{L_x}\right)\sin\!\left(\frac{n\pi y}{L_y}\right), \quad \lambda_{m,n}^2 = \pi^2\!\left(\frac{m^2}{L_x^2} + \frac{n^2}{L_y^2}\right)$$
+
+. . .
+
+Separable in 2D $\to$ eigenfunctions are products of 1D eigenfunctions.
+
+. . .
+
+The frequencies are
+
+$$\omega_{m,n} = \hat T\,\pi\sqrt{\frac{m^2}{L_x^2} + \frac{n^2}{L_y^2}}$$
+
+so they are **not** integer-spaced in general: they depend on two integer indices through a square root, rather than one integer harmonic number.
+
+## Membrane Modes
+
+<video src="animations/media/videos/membrane_modes_2d/480p15/MembraneModes2D.mp4" controls style="width: 100%; max-height: 72vh; display: block; margin: 0 auto;"></video>
+
+. . .
+
+Circular membranes -- not separable in $(x, y)$, but separable in $(r, \theta)$. Eigenfunctions are **Bessel functions** $J_n(\lambda_{n,k} r)\cos(n\theta)$, with sine/cosine angular pairs for $n > 0$. Familiar territory: timpani.
+
+## Plates
+
+A plate is to a membrane what a stiff string is to an ideal string: bending stiffness dominates.
+
+. . .
+
+The spatial operator becomes **biharmonic**:
+
+$$\mathcal L = -D\, \Delta^2 = -D \left(\partial^2_x + \partial^2_y\right)^2$$
+
+. . .
+
+For a simply-supported rectangular plate:
+
+$$\omega_{m,n}^2 = \frac{D}{\rho h} \left[\pi^2\!\left(\frac{m^2}{L_x^2} + \frac{n^2}{L_y^2}\right)\right]^2$$
+
+. . .
+
+The squared bracket gives the **cymbal-like inharmonicity**: very dense, irregular spectra. Real-world: gongs, cymbals, drums with a stiff head.
+
+. . .
+
+**Same recipe** -- different operator, different spectrum, same code structure.
+
+# FDTD: The Grid View
+
+## Back to the Spatial Operator
+
+We picked the modal basis to make $\mathcal L$ diagonal.
+
+. . .
+
+What if we pick a local grid basis instead?
+
+. . .
+
+Sample the field at $N$ equispaced points $x_i = (i-1)\, \Delta x$, $i = 1, \dots, N$, with $\Delta x = L/(N-1)$:
+
+$$\mathbf w(t) = \begin{bmatrix} w(x_1, t) \\ w(x_2, t) \\ \vdots \\ w(x_N, t) \end{bmatrix} \in \mathbb R^N$$
+
+. . .
+
+The degrees of freedom are no longer modal amplitudes $q_\mu(t)$. They are nodal values $w_i(t) = w(x_i,t)$.
+
+. . .
+
+If we want a basis-language analogy, this corresponds to local interpolation functions $\Lambda_i(x)$, each centred at grid point $x_i$.
+
+## Discrete Spatial Operator
+
+Approximate $\partial^2_x w$ by the **centred second difference**:
+
+$$\partial^2_x w(x_i, t) \approx \frac{w_{i-1} - 2 w_i + w_{i+1}}{\Delta x^2}$$
+
+. . .
+
+In matrix form, $\partial^2_x \mapsto \mathbf D_{xx}$ -- stencil $\tfrac{1}{\Delta x^2}[1, -2, 1]$ on the interior rows:
+
+$$\mathbf D_{xx} = \frac{1}{\Delta x^2}\, \begin{bmatrix}
+\star & \star & \star & & \\
+1 & -2 & 1 & & \\
+& \ddots & \ddots & \ddots & \\
+& & 1 & -2 & 1 \\
+& & \star & \star & \star
+\end{bmatrix}$$
+
+. . .
+
+The spatial operator is now $\mathbf D_{xx}$, a **sparse banded matrix**, not diagonal.
+
+## Discrete Spatial Operator
+
+The interior stencil is fixed:
+
+$$\left(\mathbf D_{xx}\mathbf w\right)_i = \frac{w_{i-1} - 2w_i + w_{i+1}}{\Delta x^2}, \qquad i = 2,\dots,N-1$$
+
+. . .
+
+The boundary rows of $\mathbf D_{xx}$ depend on the boundary condition:
+
+| Boundary condition | Boundary closure |
+|--------------------|------------------|
+| Dirichlet | First and last rows are zero; enforce $w_1^n = w_N^n = 0$ for all $n$. |
+| Neumann | Mirror ghost points: $w_0 = w_2$, $w_{N+1} = w_{N-1}$. |
+| Periodic | Wrap the stencil so $w_0 = w_N$ and $w_{N+1} = w_1$. |
+
+: {.striped}
+
+. . .
+
+So $\mathbf D_{xx}$ is the interior stencil **plus a boundary closure**, not just the three numbers $[1,-2,1]$.
+
+## Stencil Sliding Along the Grid
+
+::: {.callout-note}
+**Animation placeholder #6.** The $[1, -2, 1]$ stencil sliding along a discrete field $\mathbf w$, evaluating $\mathbf D_{xx} \mathbf w$ at each interior point. File: `images/stencil_slide.mp4`.
+:::
+
+<!--
+<video src="images/stencil_slide.mp4" controls style="width: 100%; max-height: 65vh; display: block; margin: 0 auto;"></video>
+-->
+
+. . .
+
+## Discrete Time: Centred Differences
+
+Approximate $\partial^2_t w$ the same way -- the $\delta_{tt}$ operator from week 1's homework:
+
+$$\partial^2_t w(x_i, t_n) \approx \frac{w_i^{n-1} - 2 w_i^n + w_i^{n+1}}{\Delta t^2}$$
+
+. . .
+
+Substitute into the wave equation and solve for $\mathbf w^{n+1}$:
+
+$$\boxed{\;\mathbf w^{n+1} = 2\mathbf w^n - \mathbf w^{n-1} + \left(\hat T\, \frac{\Delta t}{\Delta x}\right)^2 \Delta x^2\, \mathbf D_{xx}\, \mathbf w^n\;}$$
+
+. . .
+
+A two-step recursion. The Courant number $\nu := \hat T\, \Delta t / \Delta x$ controls **everything** about the scheme.
+
+## Output Map and State-space Form
+
+Stack $\mathbf w^n$ and $\mathbf w^{n-1}$ into a state vector:
+
+$$\mathbf h_n = \begin{bmatrix} \mathbf w^n \\ \mathbf w^{n-1} \end{bmatrix} \in \mathbb R^{2N}, \qquad \mathbf h_{n+1} = \mathbf A\, \mathbf h_n + \mathbf b\, f_n$$
+
+. . .
+
+$$\mathbf A = \begin{bmatrix} 2\mathbf I + \nu^2\, \Delta x^2\, \mathbf D_{xx} & -\mathbf I \\ \mathbf I & \mathbf 0 \end{bmatrix}$$
+
+. . .
+
+For a point force injected at $x_\text{in}$, let $\mathbf g_\text{in}$ be the vector of local interpolation weights, $(\mathbf g_\text{in})_i = \Lambda_i(x_\text{in})$:
+
+$$\mathbf b = \begin{bmatrix} \Delta t^2\,\mathbf g_\text{in} \\ \mathbf 0 \end{bmatrix}$$
+
+. . .
+
+For one readout at $x_\text{out}$, use the same interpolation idea: $(\mathbf g_\text{out})_i = \Lambda_i(x_\text{out})$.
+
+$$\mathbf C = \begin{bmatrix} \mathbf g_\text{out}^\top & \mathbf 0^\top \end{bmatrix}$$
+
+. . .
+
+**Same shape as the modal recursion.** $\mathbf A$ is sparse-banded instead of block-diagonal. The state-space machinery from week 1 carries over unchanged.
+
+## Stability: the CFL Condition
+
+The eigenvalues of $\mathbf D_{xx}$ determine when the explicit scheme blows up.
+
+. . .
+
+Plugging an eigenvector $\mathbf v_k$ into the recursion and demanding $|z_k| \le 1$ for the per-mode amplification factor yields the **Courant--Friedrichs--Lewy condition**:
+
+$$\boxed{\;\nu = \hat T\, \frac{\Delta t}{\Delta x} \;\le\; 1\;}$$
+
+. . .
+
+- $\nu < 1$: stable, but extra numerical dispersion.
+- $\nu = 1$: the "magic" choice -- the discrete scheme is exact for the ideal wave equation.
+- $\nu > 1$: catastrophic blow-up within milliseconds.
+
+## CFL Blow-up
+
+<video src="animations/media/videos/cfl_blowup/480p15/CFLBlowup.mp4" controls style="width: 100%; max-height: 65vh; display: block; margin: 0 auto;"></video>
+
+## Dispersion in the High Modes {style="font-size: 0.84em;"}
+
+Let $\lambda$ be the continuous wavenumber, so $\lambda=\lambda_\mu$ for modal mode $\mu$.
+
+. . .
+
+The modal stiff-string dispersion relation is the physical one:
+
+$$\omega_\text{modal}^2(\lambda) = \hat T^2 \lambda^2 + \hat D^2 \lambda^4$$
+
+. . .
+
+For the ideal-string FDTD scheme ($\hat D=0$), centred differences give the numerical relation
+
+$$\omega_\text{discrete}(\lambda) = \frac{2}{\Delta t}\arcsin\!\left(\nu\, \sin\!\frac{\lambda\Delta x}{2}\right), \qquad \nu = \hat T\,\frac{\Delta t}{\Delta x}$$
+
+. . .
+
+Low modes ($\lambda\Delta x \ll 1$): $\sin(\lambda\Delta x/2) \approx \lambda\Delta x/2$, so $\omega_\text{discrete} \approx \hat T\,\lambda$, matching the ideal modal relation.
+
+. . .
+
+High modes: modal stiffness adds the physical upward bend $+\hat D^2 \lambda^4$, while FDTD adds numerical dispersion because the grid replaces $\lambda^2$ by
+
+$$\tilde\lambda^2 = \left(\frac{2}{\Delta x}\sin\!\frac{\lambda\Delta x}{2}\right)^2$$
+
+. . .
+
+This is exactly the disagreement the stretch goal exposed: the high eigenvalues of $\mathbf D_{xx}$ differ from $-\lambda_\mu^2 = -(\mu\pi/L)^2$.
+
+# Modal vs FDTD
+
+## State-space Side by Side {style="font-size: 0.58em;"}
+
+:::: {.columns}
+
+::: {.column width="50%"}
+### Modal: continuous time
+
+$$\mathbf h = \begin{bmatrix} \mathbf q \\ \dot{\mathbf q} \end{bmatrix}, \qquad \dot{\mathbf h} = \mathbf A\,\mathbf h + \mathbf b\,f(t), \qquad y = \mathbf C\,\mathbf h$$
+
+**$\mathbf A$ matrix**
+
+$$\mathbf A = \begin{bmatrix} \mathbf 0 & \mathbf I \\ -\boldsymbol\Omega^2 & -2\boldsymbol\Gamma \end{bmatrix}$$
+
+Diagonal mode pairs: modes are decoupled.
+
+**Input map**
+
+$$\mathbf b = \begin{bmatrix} \mathbf 0 \\ \mathbf b_q \end{bmatrix}, \qquad (\mathbf b_q)_\mu = \frac{\phi_\mu(x_\text{in})}{\lVert\phi_\mu\rVert^2}$$
+
+Input is projected onto eigenfunctions.
+
+**Output map**
+
+$$\mathbf C = \begin{bmatrix} \phi_1(x_\text{out}) & \cdots & \phi_N(x_\text{out}) & 0 & \cdots & 0 \end{bmatrix}$$
+
+Output samples the modal expansion.
+:::
+
+::: {.column width="50%"}
+### FDTD: discrete time
+
+$$\mathbf h_n = \begin{bmatrix} \mathbf w^n \\ \mathbf w^{n-1} \end{bmatrix}, \qquad \mathbf h_{n+1} = \mathbf A\,\mathbf h_n + \mathbf b\,f_n, \qquad y_n = \mathbf C\,\mathbf h_n$$
+
+**$\mathbf A$ matrix**
+
+$$\mathbf A = \begin{bmatrix} 2\mathbf I + \nu^2\Delta x^2\mathbf D_{xx} & -\mathbf I \\ \mathbf I & \mathbf 0 \end{bmatrix}$$
+
+Sparse grid coupling through $\mathbf D_{xx}$.
+
+**Input map**
+
+$$\mathbf b = \begin{bmatrix} \Delta t^2\,\mathbf g_\text{in} \\ \mathbf 0 \end{bmatrix}$$
+
+Input is distributed to nearby grid points.
+
+**Output map**
+
+$$\mathbf C = \begin{bmatrix} \mathbf g_\text{out}^\top & \mathbf 0^\top \end{bmatrix}$$
+
+Output interpolates from local grid values.
+:::
+
+::::
+
+. . .
+
+Same state-space ingredients, but not the same time domain yet: modal is still an ODE, FDTD is already a recurrence.
+
+## State-space Side by Side {#state-space-side-by-side-time-discrete style="font-size: 0.58em;"}
+
+**Time-discrete modal**
+
+:::: {.columns}
+
+::: {.column width="50%"}
+### Modal: discrete time
+
+$$\mathbf h_n = \begin{bmatrix} \mathbf q^n \\ \mathbf q^{n-1} \end{bmatrix}, \qquad \mathbf h_{n+1} = \mathbf A\,\mathbf h_n + \mathbf b\,f_n, \qquad y_n = \mathbf C\,\mathbf h_n$$
+
+**$\mathbf A$ matrix**
+
+Using centred differences for both $\ddot{\mathbf q}$ and $\dot{\mathbf q}$, let $\mathbf R = (\mathbf I+\Delta t\,\boldsymbol\Gamma)^{-1}$:
+
+$$\mathbf A = \begin{bmatrix}
+\mathbf R(2\mathbf I-\Delta t^2\boldsymbol\Omega^2)
+&
+-\mathbf R(\mathbf I-\Delta t\,\boldsymbol\Gamma)
+\\
+\mathbf I & \mathbf 0
+\end{bmatrix}$$
+
+Still diagonal mode pairs: the inverse is elementwise, and modes remain decoupled.
+
+**Input map**
+
+$$\mathbf b = \begin{bmatrix} \Delta t^2\mathbf R\mathbf b_q \\ \mathbf 0 \end{bmatrix}, \qquad (\mathbf b_q)_\mu = \frac{\phi_\mu(x_\text{in})}{\lVert\phi_\mu\rVert^2}$$
+
+Input is projected onto eigenfunctions.
+
+**Output map**
+
+$$\mathbf C = \begin{bmatrix} \phi_1(x_\text{out}) & \cdots & \phi_N(x_\text{out}) & 0 & \cdots & 0 \end{bmatrix}$$
+
+Output samples the modal expansion.
+:::
+
+::: {.column width="50%"}
+### FDTD: discrete time
+
+$$\mathbf h_n = \begin{bmatrix} \mathbf w^n \\ \mathbf w^{n-1} \end{bmatrix}, \qquad \mathbf h_{n+1} = \mathbf A\,\mathbf h_n + \mathbf b\,f_n, \qquad y_n = \mathbf C\,\mathbf h_n$$
+
+**$\mathbf A$ matrix**
+
+$$\mathbf A = \begin{bmatrix} 2\mathbf I + \nu^2\Delta x^2\mathbf D_{xx} & -\mathbf I \\ \mathbf I & \mathbf 0 \end{bmatrix}$$
+
+Sparse grid coupling through $\mathbf D_{xx}$.
+
+**Input map**
+
+$$\mathbf b = \begin{bmatrix} \Delta t^2\,\mathbf g_\text{in} \\ \mathbf 0 \end{bmatrix}$$
+
+Input is distributed to nearby grid points.
+
+**Output map**
+
+$$\mathbf C = \begin{bmatrix} \mathbf g_\text{out}^\top & \mathbf 0^\top \end{bmatrix}$$
+
+Output interpolates from local grid values.
+:::
+
+::::
+
+. . .
+
+Same state-space shape, different basis: **global modes diagonalise the physics**, while **local grid samples preserve locality**.
+
+## When to Use Which {style="font-size: 0.85em;"}
+
+:::: {.columns}
+
+::: {.column width="50%"}
+### Modal
+
+- Linear, time-invariant systems.
+- Sparse spectra (a few hundred modes).
+- Per-mode damping is trivial.
+- Output at arbitrary positions: just sample $\phi_\mu(x_\text{out})$.
+- Embarrassingly parallel (decoupled ODEs).
+- Awkward for distributed nonlinearity or contact.
+:::
+
+::: {.column width="50%"}
+### FDTD
+
+- Local interactions: contact, collisions, distributed nonlinearity.
+- Complex geometries (irregular domains).
+- Sparse banded $\mathbf A$, locality is natural.
+- Per-grid-point physics: easy to introduce position-dependent material.
+- Stability is a constraint (CFL).
+- Dispersion errors for high modes.
+:::
+
+::::
+
+. . .
+
+**Both produce $\mathbf h_{n+1} = \mathbf A\, \mathbf h_n + \mathbf b\, f_n$.** The state-space machinery and downstream learning hooks are basis-agnostic.
+
+. . .
+
+**Next week:** nonlinearities make modal awkward (mode coupling everywhere). FDTD shines here, but neural methods can make nonlinearities tractable in the modal domain.
+
+# Wrapping Up
+
+## Next Week
+
+**Session 3: Nonlinear Systems and Coupled Models**
+
+- Main focus: modal treatment of nonlinearities and mode coupling.
+- Collisions and excitation functions: brief tour of force laws and input maps.
+- Coupled subsystems: string + body
+- Differentiability: why it becomes interesting once nonlinearities are in.
+
+## Homework
+
+**Reading**
+
+- Bilbao, *Numerical Sound Synthesis*, Sec. 8.1, "The Kirchhoff--Carrier string model".
+
+**Optional**
+
+- As we look further next week into optimising parameters for physical and neural networks, we face many obstacles. Try to optimise the argument of the `sin` function. This can be done in 10 or so lines with JAX. What do you observe? Do you always converge to the right true value? Try with different initialisations.
+- Try to make sense on your own of `week02/notebooks/modal_identification.py`. We will look at JAX later on and how the autodiff works, but for now try to change some parameters and try to see where it fails.

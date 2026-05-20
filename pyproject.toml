@@ -8,7 +8,10 @@ dependencies = [
     "ipykernel>=7.2.0",
     "jaxdiffmodal",
     "jupyter>=1.1.1",
+    "manim>=0.20.1",
+    "optax>=0.2.8",
     "pyyaml>=6.0.3",
+    "scipy>=1.17.1",
 ]
 
 [tool.uv.sources]

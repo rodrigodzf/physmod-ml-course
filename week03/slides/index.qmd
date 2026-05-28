@@ -1,0 +1,1251 @@
+---
+title: "Nonlinear Systems and Coupled Models"
+subtitle: "Differentiable Physical Modelling and Machine Learning for Sound Synthesis"
+author: "Rodrigo Diaz"
+date: "2026-05-21"
+execute-dir: file
+execute:
+  cache: false
+  warning: false
+format:
+  revealjs:
+    embed-resources: false
+    theme: dark
+    slide-number: true
+    chalkboard: true
+    smaller: true
+    scrollable: true
+    code-fold: false
+    code-overflow: wrap
+    highlight-style: github
+    footer: "Week 3 -- Nonlinear Systems and Coupled Models"
+    transition: fade
+    math: mathjax
+---
+
+## Overview
+
+::: {.incremental}
+- Recap: diagonal modal dynamics and complex poles
+- Activities: modal recursion, tension modulation, pole recovery
+- Nonlinearities as mode couplings
+- Geometric nonlinearity: state-dependent tension
+- Brief outlook: contact, excitation, and coupled bodies
+- Differentiability: estimate parameters and forces
+:::
+
+# Recap: Linear Modal Systems
+
+## Week 2
+
+We wrote the displacement field as a sum of mode shapes:
+
+$$
+w(x,t) = \sum_{\mu=1}^{N} \phi_\mu(x)\, q_\mu(t)
+$$
+
+. . .
+
+- $\phi_\mu(x)$ is the shape of mode $\mu$
+- $q_\mu(t)$ is its time-varying amplitude
+- In a linear system, each mode behaves like its own oscillator
+
+. . .
+
+$$
+\ddot q_\mu
++ 2\gamma_\mu \dot q_\mu
++ \omega_\mu^2 q_\mu
+= b_\mu f(t)
+$$
+
+## From Oscillator to Poles
+
+First ignore the input:
+
+$$
+\ddot q_\mu
++ 2\gamma_\mu \dot q_\mu
++ \omega_\mu^2 q_\mu
+= 0
+$$
+
+. . .
+
+Assume an exponential solution:
+
+$$
+q_\mu(t) = e^{s_\mu t}
+$$
+
+. . .
+
+Substitute into the oscillator equation:
+
+$$
+s_\mu^2 + 2\gamma_\mu s_\mu + \omega_\mu^2 = 0
+$$
+
+. . .
+
+So each mode has two complex poles:
+
+$$
+s_{\mu,\pm}
+=
+-\gamma_\mu
+\pm
+i\sqrt{\omega_\mu^2 - \gamma_\mu^2}
+$$
+
+## From Oscillator to Poles
+
+The exponential form makes differentiation simple:
+
+$$
+q_\mu(t) = e^{s_\mu t}
+$$
+
+$$
+\dot q_\mu(t) = s_\mu e^{s_\mu t},
+\qquad
+\ddot q_\mu(t) = s_\mu^2 e^{s_\mu t}
+$$
+
+. . .
+
+Substitute into the oscillator:
+
+$$
+\left(
+s_\mu^2
++ 2\gamma_\mu s_\mu
++ \omega_\mu^2
+\right)e^{s_\mu t}
+=
+0
+$$
+
+. . .
+
+Since $e^{s_\mu t}\neq 0$, the pole equation is:
+
+$$
+s_\mu^2 + 2\gamma_\mu s_\mu + \omega_\mu^2 = 0
+$$
+
+. . .
+
+The Laplace transform formalises the same idea: differentiation in time becomes multiplication by $s$.
+
+## Each Mode as a Complex State
+
+Because the oscillator has real coefficients, the two poles are complex conjugates:
+
+$$
+s_\mu = -\gamma_\mu + i\omega_{d,\mu},
+\qquad
+s_\mu^\ast = -\gamma_\mu - i\omega_{d,\mu}
+$$
+
+. . .
+
+Store one complex modal amplitude $\tilde q_\mu$:
+
+$$
+\dot{\tilde q}_\mu
+=
+s_\mu \tilde q_\mu
++ \tilde b_\mu f(t)
+$$
+
+. . .
+
+The conjugate trajectory follows automatically:
+
+$$
+\dot{\tilde q}_\mu^\ast
+=
+s_\mu^\ast \tilde q_\mu^\ast
++ \tilde b_\mu^\ast f(t)
+$$
+
+. . .
+
+The real modal displacement is recovered by taking the real part:
+
+$$
+q_\mu(t)
+=
+\operatorname{Re}\{\tilde q_\mu(t)\}
+$$
+
+. . .
+
+For light damping:
+
+$$
+\omega_{d,\mu}
+=
+\sqrt{\omega_\mu^2-\gamma_\mu^2}
+\approx
+\omega_\mu
+$$
+
+## Linear Modes Do Not Talk
+
+Stack the stored complex amplitudes into one vector:
+
+$$
+\dot{\tilde{\mathbf q}}
+=
+\mathbf A\tilde{\mathbf q}
++ \tilde{\mathbf b} f(t)
+$$
+
+. . .
+
+For a linear modal system, the dynamics matrix is diagonal:
+
+$$
+\mathbf A =
+\begin{bmatrix}
+s_1 & 0 & 0 & \cdots \\
+0 & s_2 & 0 & \cdots \\
+0 & 0 & s_3 & \cdots \\
+\vdots & \vdots & \vdots & \ddots
+\end{bmatrix}
+$$
+
+. . .
+
+The zeros off the diagonal mean:
+
+$$
+\text{mode } \mu \quad \text{does not directly affect mode } \nu
+$$
+
+. . .
+
+**Week 3 starts when these zeros stop being zeros.**
+
+# Mini Task: Make the Diagonal System Sound
+
+## Activity: Complex Modal Recursion
+
+Notebook: `week03/notebooks/complex_modal_recursion.py`
+
+. . .
+
+You are given:
+
+$$
+\boldsymbol\omega =
+\begin{bmatrix}
+\omega_1 & \omega_2 & \cdots & \omega_N
+\end{bmatrix}^{\top},
+\qquad
+\boldsymbol\gamma =
+\begin{bmatrix}
+\gamma_1 & \gamma_2 & \cdots & \gamma_N
+\end{bmatrix}^{\top}
+$$
+
+and an initial complex modal state:
+
+$$
+\tilde{\mathbf q}^{\,0} \in \mathbb C^N
+$$
+
+In the notebook, this complex state is named `z`.
+
+. . .
+
+Build the continuous-time diagonal system:
+
+$$
+\mathbf A =
+\operatorname{diag}(\mathbf s),
+\qquad
+s_\mu = -\gamma_\mu + i\omega_\mu
+$$
+
+. . .
+
+Then discretise it:
+
+$$
+\tilde{\mathbf q}^{\,n+1}
+=
+\operatorname{diag}(\mathbf a)\,\tilde{\mathbf q}^{\,n},
+\qquad
+a_\mu = e^{s_\mu \Delta t}
+$$
+
+. . .
+
+Finally produce the audio output:
+
+$$
+y^n = \operatorname{Re}\left\{\sum_{\mu=1}^{N} c_\mu \tilde q_\mu^{\,n}\right\}
+$$
+
+## Activity: Three Ways to Advance the State
+
+The exact solution is a matrix exponential:
+
+$$
+\tilde{\mathbf q}^{\,n}
+=
+e^{\mathbf A n\Delta t}\tilde{\mathbf q}^{\,0}
+$$
+
+. . .
+
+Since $\mathbf A$ is diagonal:
+
+$$
+\tilde{\mathbf q}^{\,n}
+=
+\operatorname{diag}(\mathbf a)^n \tilde{\mathbf q}^{\,0},
+\qquad
+a_\mu = e^{s_\mu\Delta t}
+$$
+
+. . .
+
+So the state advance is just a cumulative product. All methods should produce the same sound:
+
+::: {.incremental}
+1. **Cumulative product**
+
+$$
+\tilde q_\mu^{\,n} = \tilde q_\mu^{\,0}\prod_{k=0}^{n-1}a_\mu
+$$
+
+2. **Vandermonde / direct evaluation**
+
+$$
+\tilde q_\mu^{\,n} = \tilde q_\mu^{\,0}\, a_\mu^n
+$$
+
+3. **Sequential recursion**
+
+$$
+\tilde{\mathbf q}^{\,n+1} = \mathbf a \odot \tilde{\mathbf q}^{\,n}
+$$
+
+4. **Parallel scan**
+
+Use `jax.lax.associative_scan` over the multiplicative updates.
+:::
+
+. . .
+
+Skeleton:
+
+```python
+sr = 44100
+dt = 1 / sr
+n_steps = 2 * sr
+
+s = -gamma + 1j * omega
+a = jnp.exp(s * dt)
+
+# TODO: compute z over time, shape (n_steps, n_modes)
+# TODO: y = real(z @ c)
+# TODO: normalise and listen
+```
+
+. . .
+
+Checkpoint question:
+
+$$
+\text{What changes if one } \gamma_\mu < 0?
+$$
+
+# Nonlinearities and Mode Coupling
+
+## What Breaks the Diagonal System?
+
+In the linear case:
+
+$$
+\dot{\mathbf q}
+=
+\mathbf A\mathbf q
+$$
+
+with diagonal $\mathbf A$.
+
+. . .
+
+With nonlinear physics:
+
+$$
+\dot{\mathbf q}
+=
+\mathbf A\mathbf q
++ \mathbf{nl}(\mathbf q)
+$$
+
+. . .
+
+The diagonal part still describes the independent modal resonances.
+
+. . .
+
+The new term $\mathbf{nl}(\mathbf q)$ collects the **nonlinear state-dependent forces**.
+
+. . .
+
+**The matrix can stay diagonal, but the dynamics are no longer decoupled.**
+
+## Nonlinearities as Mode Couplings
+
+In modal coordinates, the nonlinear term becomes a combination of modal amplitudes.
+
+. . .
+
+Today we mostly care about **cubic** couplings.
+
+. . .
+
+For tension modulation, the cubic has a special structure:
+
+$$
+\mathbf{nl}_\mu(\mathbf q)
+\sim
+\sum_\nu q_\mu q_\nu q_\nu
+$$
+
+. . .
+
+One mode $q_\mu$ is multiplied by a global quadratic stretch:
+
+$$
+\sum_\nu q_\nu^2
+$$
+
+. . .
+
+For a more general geometric nonlinearity, such as a plate, all three modal indices can be different:
+
+$$
+\mathbf{nl}_\mu(\mathbf q)
+=
+\sum_{i,j,k}
+C_{i j k}\,q_i q_j q_k
+$$
+
+. . .
+
+In code:
+
+```python
+stretch = jnp.einsum("n->", q**2)
+nl_tension = q * stretch
+
+nl_plate = jnp.einsum("mijk,i,j,k->m", C, q, q, q)
+```
+
+. . .
+
+Next: derive the structured tension case from the wave equation.
+
+## Physical Sources of Nonlinearity
+
+::: {.incremental}
+- **Main focus today: geometric nonlinearity**
+- A vibrating string stretches as it moves
+- Stretching increases the effective tension
+- Increased tension changes the modal frequencies
+- Since the tension depends on the current state, the modes become coupled
+:::
+
+. . .
+
+Other nonlinearities exist too: contact, collisions, bow friction, reeds, hammers.
+
+. . .
+
+But today we mostly follow one thread:
+
+$$
+\dot{\mathbf q}
+=
+\mathbf A\mathbf q
++ \mathbf r_\text{geom}(\mathbf q, \theta)
+$$
+
+## Week 3 Roadmap
+
+::: {.incremental}
+1. Mode coupling from nonlinear terms
+2. Kirchhoff--Carrier string and tension modulation
+3. Energy transfer between modes
+4. Brief outlook: contact, excitation and coupled bodies
+5. Why differentiability helps estimate nonlinear parameters
+:::
+
+# Geometric Nonlinearity
+
+## The String Gets Longer
+
+A displaced string is slightly longer than a straight string.
+
+. . .
+
+For small slopes, the extra length is approximately:
+
+$$
+\Delta L(t)
+\approx
+\frac{1}{2}
+\int_0^L
+\left(\partial_x w(x,t)\right)^2
+\,dx
+$$
+
+. . .
+
+::: {.incremental}
+- the extra length depends on the current shape
+- larger slopes produce more stretching
+- stretching changes the tension
+:::
+
+## State-Dependent Tension
+
+The increased length raises the string tension:
+
+$$
+T(w)
+=
+T_0
++
+\frac{EA}{2L}
+\int_0^L
+\left(\partial_x w(x,t)\right)^2
+\,dx
+$$
+
+. . .
+
+::: {.incremental}
+- $T_0$: resting tension
+- $E$: Young's modulus
+- $A$: cross-sectional area
+- $T(w)$ is a global scalar, uniform along the string
+- the string becomes stiffer when it vibrates more strongly
+:::
+
+. . .
+
+This is the source of the nonlinearity:
+
+$$
+T = T(w)
+$$
+
+Here $w$ means the whole current string shape. Time dependence enters through $w(x,t)$.
+
+## Wave Equation with $f_\text{nl}$
+
+Keep the linear string on the left and isolate the nonlinear force:
+
+$$
+\rho A\,\partial_t^2 w
+=
+T_0\,\partial_x^2w
++
+f_\text{ext}
+-
+f_\text{nl}(w)
+$$
+
+. . .
+
+In modal form:
+
+$$
+\ddot q_\mu
++
+2\gamma_\mu\dot q_\mu
++
+\omega_\mu^2q_\mu
+=
+\frac{1}{\rho}
+\left(
+\bar f_{\text{ext},\mu}
+-
+\bar f_{\text{nl},\mu}(\mathbf q)
+\right)
+$$
+
+. . .
+
+Now focus only on:
+
+$$
+\bar f_{\text{nl},\mu}(\mathbf q)
+$$
+
+## Kirchhoff--Carrier Nonlinear Force
+
+With the sign convention from the previous slide, $f_\text{nl}(w)$ is the nonlinear restoring force:
+
+$$
+f_\text{nl}(w)
+=
+-
+T_\text{nl}(w)\,\partial_x^2w
+$$
+
+. . .
+
+with
+
+$$
+T_\text{nl}(w)
+=
+\frac{EA}{2L}
+\int_0^L
+\left(\partial_x w\right)^2
+\,dx
+$$
+
+. . .
+
+So:
+
+$$
+f_\text{nl}(w)
+=
+-
+\left[
+\frac{EA}{2L}
+\int_0^L
+\left(\partial_x w\right)^2
+\,dx'
+\right]
+\partial_x^2w
+$$
+
+## Projected Nonlinear Force
+
+Start from:
+
+$$
+f_\text{nl}(w)
+=
+-
+\left[
+\frac{EA}{2L}
+\int_0^L
+\left(\partial_x w\right)^2
+\,dx'
+\right]
+\partial_x^2w
+$$
+
+. . .
+
+Using the modal expansion and orthonormal simply supported modes:
+
+$$
+\bar f_{\text{nl},\mu}(\mathbf q)
+=
+\left(
+\frac{EA}{2L}
+\sum_\nu
+\lambda_\nu^2q_\nu^2
+\right)
+\lambda_\mu^2q_\mu
+$$
+
+. . .
+
+What happened during projection:
+
+$$
+\int_0^L\phi_i'\phi_j'\,dx
+\rightarrow
+\begin{cases}
+\lambda_i^2, & i=j \\
+0, & i\neq j
+\end{cases}
+$$
+
+$$
+\int_0^L\phi_i''\phi_\mu\,dx
+\rightarrow
+\begin{cases}
+-\lambda_\mu^2, & i=\mu \\
+0, & i\neq \mu
+\end{cases}
+$$
+
+. . .
+
+So the explicit minus in $f_\text{nl}(w)$ cancels the minus from the curvature projection.
+
+## Modal Kirchhoff--Carrier Equation
+
+Use the same force convention as before:
+
+$$
+\ddot q_\mu
++
+2\gamma_\mu\dot q_\mu
++
+\omega_\mu^2q_\mu
+=
+\frac{1}{\rho}
+\left(
+\bar f_{\text{ext},\mu}
+-
+\bar f_{\text{nl},\mu}(\mathbf q)
+\right)
+$$
+
+$$
+\bar f_{\text{nl},\mu}(\mathbf q)
+=
+\frac{EA}{2L}
+\lambda_\mu^2q_\mu
+\sum_\nu
+\lambda_\nu^2q_\nu^2
+$$
+
+. . .
+
+With no external force, the modal ODE is:
+
+$$
+\ddot q_\mu
++
+2\gamma_\mu\dot q_\mu
++
+\omega_\mu^2 q_\mu
++
+\frac{1}{\rho}\bar f_{\text{nl},\mu}(\mathbf q)
+=
+0
+$$
+
+## Structured Cubic Coupling
+
+Each modal force contains terms like:
+
+$$
+q_\mu q_1^2,
+\quad
+q_\mu q_2^2,
+\quad
+q_\mu q_3^2,
+\quad
+\dots
+$$
+
+. . .
+
+Ignoring physical constants for a moment:
+
+```python
+stretch = jnp.einsum("n->", q**2)
+nl = q * stretch
+```
+
+. . .
+
+This is cubic, but it is not a dense cubic tensor:
+
+$$
+\text{one global stretch scalar}
+\quad \times \quad
+\text{one modal displacement}
+$$
+
+## Physical Consequence
+
+When the vibration amplitude is large:
+
+::: {.incremental}
+- the string stretches more
+- the effective tension increases
+- the modal frequencies move upward
+- as the sound decays, the tension relaxes
+- the pitch falls back toward the linear value
+:::
+
+. . .
+
+This is often called **tension modulation**.
+
+. . .
+
+It is one of the simplest ways a linear modal string becomes nonlinear.
+
+# Mini Task: Hear the Nonlinearity
+
+## Activity: Tension Modulation
+
+Notebook: `week03/notebooks/nonlinear_tension_modulation.py`
+
+. . .
+
+Start with the linear modal equation:
+
+$$
+\ddot q_\mu
+=
+-2\gamma_\mu\dot q_\mu
+-\omega_\mu^2 q_\mu
+$$
+
+. . .
+
+Then add one structured cubic restoring force:
+
+$$
+\ddot q_\mu
+=
+-2\gamma_\mu\dot q_\mu
+-\omega_\mu^2 q_\mu
+-
+\beta\lambda_\mu^2q_\mu
+\left(
+\sum_\nu \lambda_\nu^2q_\nu^2
+\right)
+$$
+
+. . .
+
+In the notebook, `lambda_mu` stores the squared wavenumber from `jaxdiffmodal`.
+
+. . .
+
+The TODO is just:
+
+```python
+stretch = jnp.einsum("n,n->", lambda_mu, q**2)
+force = beta * lambda_mu * q * stretch
+```
+
+. . .
+
+Ask students to compare:
+
+::: {.incremental}
+- `beta = 0` versus `beta > 0`
+- small versus large pluck amplitude
+- waveform shape during the attack and decay
+- whether the perceived pitch stays fixed
+:::
+
+## What Students Should Notice
+
+::: {.incremental}
+- The nonlinear model is amplitude-dependent.
+- The effect is strongest near the attack.
+- As the vibration decays, the effective tension relaxes.
+- A linear system can get louder or quieter, but its modal frequencies do not depend on the current state.
+- The coupling is compact: one scalar `stretch` affects every modal equation.
+:::
+
+# Other Nonlinear Forces
+
+## Contact and Collisions
+
+Some nonlinearities switch on only when two objects touch.
+
+. . .
+
+A simple contact law:
+
+$$
+F_c(y)
+=
+k\,[y-y_c]_+^\alpha
+$$
+
+where
+
+$$
+[x]_+ = \max(x,0)
+$$
+
+. . .
+
+::: {.incremental}
+- no force before contact
+- rapidly increasing force after contact
+- examples: hammer-string, mallet-membrane, rattling objects
+:::
+
+. . .
+
+This is local in physical space, but becomes mode coupling after projection.
+
+## Nonlinear Excitation
+
+Some instruments are nonlinear mainly at the excitation point.
+
+. . .
+
+Examples:
+
+::: {.incremental}
+- **bowed string:** friction depends on relative velocity
+- **reed instruments:** airflow depends on pressure and reed opening
+- **hammered string:** felt compression creates a nonlinear contact force
+:::
+
+. . .
+
+Common pattern:
+
+$$
+F_\text{exc}
+=
+F(y,\dot y,u;\theta)
+$$
+
+. . .
+
+The resonator can still be modal, but the force law is state-dependent.
+
+# Coupled Systems
+
+## String + Body
+
+A guitar is not just a string.
+
+. . .
+
+The string injects force into the bridge, and the body moves in response:
+
+$$
+\text{string} \quad \longleftrightarrow \quad \text{bridge} \quad \longleftrightarrow \quad \text{body}
+$$
+
+. . .
+
+Each subsystem can still be modal:
+
+$$
+w_s(x,t) = \sum_\mu \phi^s_\mu(x)q^s_\mu(t),
+\qquad
+w_b(\mathbf x,t) = \sum_\nu \phi^b_\nu(\mathbf x)q^b_\nu(t)
+$$
+
+. . .
+
+How do they interact? Let's look at three levels of complexity.
+
+## Model 1: The One-Way Street (Strict Decoupling)
+
+What if the string assumes the bridge is a brick wall?
+
+. . .
+
+The string vibrates against a rigid boundary. It doesn't "feel" the body yielding:
+
+$$
+\ddot{\mathbf q}_s = \text{string dynamics (isolated)}
+$$
+
+. . .
+
+However, the bridge still passes the resulting force to the body. The body acts simply as a filter:
+
+$$
+\ddot{\mathbf q}_b = \text{body dynamics} + \mathbf b_bF_{string}
+$$
+
+## Model 2: The Two-Way Street (Boundary Impedance)
+
+Real bridges yield. The strings and body form a two-way feedback loop.
+
+. . .
+
+Let the bridge displacement be read from each modal system:
+
+$$
+y_s = \mathbf c_s^\top \mathbf q_s,
+\qquad
+y_b = \mathbf c_b^\top \mathbf q_b
+$$
+
+. . .
+
+The bridge acts as a mechanical impedance (a coupling force):
+
+$$
+F_c
+=
+k_c(y_s-y_b)
++
+r_c(\dot y_s-\dot y_b)
+$$
+
+. . .
+
+The same interaction force acts on both, with opposite signs:
+
+$$
+\ddot{\mathbf q}_s = \text{string dynamics} - \mathbf b_sF_c
+$$
+
+$$
+\ddot{\mathbf q}_b = \text{body dynamics} + \mathbf b_bF_c
+$$
+
+## Model 3: Sympathetic Resonance (Impedance Network)
+
+A guitar has more than one string sharing the exact same bridge.
+
+. . .
+
+Because the bridge ($y_b$) is shared, energy flows back up into the other strings:
+
+$$
+\text{String A} \quad \longrightarrow \quad \text{Bridge} \quad \longrightarrow \quad \text{String B}
+$$
+
+. . .
+
+The single coupling force $F_c$ expands into an **impedance network**.
+
+::: {.incremental}
+- Pluck one string, the others ring.
+- Modal banks remain individually simple to compute.
+- The interaction network creates the complex reality.
+:::
+
+
+# Differentiability
+
+## Start with the Linear Case
+
+Before learning nonlinear forces, start with the linear modal model:
+
+$$
+\tilde q_\mu(t)
+=
+\tilde q_\mu(0)\,
+e^{(-\gamma_\mu+i\omega_\mu)t}
+$$
+
+. . .
+
+The output is:
+
+$$
+\hat y(t)
+=
+\operatorname{Re}
+\left\{
+\sum_\mu c_\mu \tilde q_\mu(t)
+\right\}
+$$
+
+. . .
+
+Fit the parameters by minimising:
+
+$$
+\mathcal L
+=
+\frac{1}{T}
+\sum_n
+\left(
+\hat y_n - y_n
+\right)^2
+$$
+
+## Differentiable Does Not Mean Easy
+
+Can we differentiate through the model?
+
+. . .
+
+Yes, in the parameter range we use, the modal recursion, synthesis equation, and loss have well-defined gradients.
+
+. . .
+
+Are the gradients informative?
+
+. . .
+
+Sometimes.
+
+::: {.incremental}
+- Good initialisation can point the optimiser towards the right basin.
+- Poor initialisation can land in a local minimum.
+- Frequency and phase errors can make the loss surface highly oscillatory.
+:::
+
+## What Are We Recovering?
+
+The fitted poles are:
+
+$$
+s_\mu = -\gamma_\mu+i\omega_\mu
+$$
+
+. . .
+
+These are not just abstract numbers.
+
+. . .
+
+For a stiff string:
+
+$$
+\omega_\mu^2
+=
+\frac{T_0}{\rho A}\lambda_\mu^2
++
+\frac{EI}{\rho A}\lambda_\mu^4
+$$
+
+. . .
+
+So the frequency curve contains information about:
+
+::: {.incremental}
+- tension $T_0$
+- density $\rho$
+- cross-sectional area $A$
+- stiffness $EI$
+:::
+
+## Damping Parameters
+
+The decay rates also have physical structure:
+
+$$
+2\gamma_\mu
+\approx
+d_1 + d_3\lambda_\mu^2
+$$
+
+. . .
+
+So fitting $\gamma_\mu$ across modes can recover:
+
+::: {.incremental}
+- frequency-independent damping $d_1$
+- frequency-dependent damping $d_3$
+:::
+
+. . .
+
+This is the first differentiable inverse problem:
+
+$$
+\text{audio or modal trajectory}
+\quad\rightarrow\quad
+\omega_\mu,\gamma_\mu
+\quad\rightarrow\quad
+\text{physical parameters}
+$$
+
+## Activity: Recover the Poles
+
+Notebook: `week03/notebooks/complex_modal_recursion.py`
+
+. . .
+
+Part 2 fits the poles of a target linear modal simulation:
+
+$$
+s_\mu = -\gamma_\mu+i\omega_\mu,
+\qquad
+\overline{\mathbf A}
+=
+\operatorname{diag}
+\left(e^{s_\mu\Delta t}\right)
+$$
+
+. . .
+
+Students choose the initial pole guesses and complete the stability constraint:
+
+$$
+\operatorname{Re}(s_\mu)\le 0,
+\qquad
+\left|\operatorname{diag}(\overline{\mathbf A})_\mu\right|\le 1
+$$
+
+. . .
+
+Then Optax updates the unconstrained parameters by gradient descent.
+
+## Then Add Nonlinear Forces
+
+Once the linear part is identified:
+
+$$
+\ddot{\mathbf q}
+=
+-2\boldsymbol\Gamma\dot{\mathbf q}
+-
+\boldsymbol\Omega^2\mathbf q
+-
+\mathbf{nl}(\mathbf q)
+$$
+
+. . .
+
+For tension modulation, we know:
+
+$$
+\mathbf{nl}_\mu(\mathbf q)
+=
+\frac{EA}{2\rho L}
+\lambda_\mu^2q_\mu
+\sum_\nu
+\lambda_\nu^2q_\nu^2
+$$
+
+. . .
+
+For more complex systems, we may learn:
+
+$$
+\mathbf{nl}_\theta(\mathbf q)
+$$
+
+. . .
+
+Differentiability lets us optimise physical parameters, initial conditions, or neural residuals through the simulator.
+
+## Week 3 Takeaway
+
+Linear modal synthesis gives:
+
+$$
+\text{independent modes}
+$$
+
+. . .
+
+Geometric nonlinearity gives:
+
+$$
+\text{state-dependent coupling}
+$$
+
+. . .
+
+Differentiability lets us turn the simulator around:
+
+$$
+\text{sound}
+\quad\rightarrow\quad
+\text{parameters and forces}
+$$

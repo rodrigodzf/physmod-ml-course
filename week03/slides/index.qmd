@@ -827,8 +827,6 @@ In the notebook, `lambda_mu` stores the squared wavenumber from `jaxdiffmodal`.
 
 . . .
 
-The TODO is just:
-
 ```python
 stretch = jnp.einsum("n,n->", lambda_mu, q**2)
 force = beta * lambda_mu * q * stretch
@@ -836,7 +834,6 @@ force = beta * lambda_mu * q * stretch
 
 . . .
 
-Ask students to compare:
 
 ::: {.incremental}
 - `beta = 0` versus `beta > 0`
@@ -844,8 +841,6 @@ Ask students to compare:
 - waveform shape during the attack and decay
 - whether the perceived pitch stays fixed
 :::
-
-## What Students Should Notice
 
 ::: {.incremental}
 - The nonlinear model is amplitude-dependent.

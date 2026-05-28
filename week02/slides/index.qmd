@@ -123,9 +123,6 @@ $$\boxed{\;w(x,t) = \sum_\mu \phi_\mu(x)\, q_\mu(t)\;}$$
 Here: finite-energy string shapes on $[0,L]$ that satisfy the boundary conditions. Smooth functions can be **approximated** with a **finite** set. The smoother the function, the fewer terms you need.
 :::
 
-. . .
-
-The choice of spatial representation is what distinguishes **modal synthesis** (global eigenfunctions) from **FDTD** (local grid samples, or local interpolation functions if we use basis language). The amplitudes $q_\mu(t)$ obey ODEs we derive from the PDE -- time discretisation comes later, when we do FDTD time-stepping.
 
 ## Separation + Basis Expansion {style="font-size: 0.85em;"}
 
@@ -238,7 +235,7 @@ We want a basis that makes the spatial derivative operator $\op{\partial^2_x}$ a
 
 $$\op{\partial^2_x}\, \xvar{\phi_\mu(x)} \;=\; -\,\eig{\lambda_\mu^2}\, \xvar{\phi_\mu(x)}$$
 
-[**operator**]{.op-c} acting on an [**eigenfunction**]{.x-c} returns the same eigenfunction scaled by an [**eigenvalue**]{.eig-c} (squared, so that $\eig{\lambda_\mu}$ carries units of a wave number).
+[**operator**] acting on an [**eigenfunction**] returns the same eigenfunction scaled by an [**eigenvalue**] (squared, so that $\eig{\lambda_\mu}$ carries units of a wave number).
 
 . . .
 
@@ -250,29 +247,24 @@ Ideal Dirichlet string ($\xvar{\phi_\mu(0) = \phi_\mu(L) = 0}$):
 
 $$\xvar{\phi_\mu(x) = \sin\!\left(\frac{\mu\pi x}{L}\right)}, \qquad \eig{\lambda_\mu = \frac{\mu\pi}{L}}, \qquad \mu = 1, 2, 3, \dots$$
 
-. . .
 
-The natural frequencies are $\tvar{\omega_\mu} = \hat T\, \eig{\lambda_\mu} = \hat T\, \mu\pi/L$ -- a harmonic series.
-
-## Mode Shapes
-
-::: {.callout-note}
-**Animation placeholder #3.** First five sine modes $\phi_\mu(x)$ drawn one at a time with labels $\mu$ and $\omega_\mu$, then plotted together. File: `images/mode_shapes_buildup.mp4`.
-:::
-
-<!--
-<video src="images/mode_shapes_buildup.mp4" controls style="width: 100%; max-height: 65vh; display: block; margin: 0 auto;"></video>
--->
-
-. . .
+## Mode orthogonality and normalisation
 
 The $\phi_\mu$ are **orthogonal** under the standard inner product on $[0, L]$:
 
-$$\langle \phi_\mu, \phi_\nu \rangle = \int_0^L \phi_\mu(x)\, \phi_\nu(x)\, dx = \tfrac{L}{2}\, \delta_{\mu\nu}$$
+$$\langle \phi_\mu, \phi_\nu \rangle = \int_0^L \phi_\mu(x)\, \phi_\nu(x)\, dx = \lVert \phi_\mu \rVert^2\, \delta_{\mu\nu}$$
+
+where the squared norm is $\lVert \phi_\mu \rVert^2 = L/2$ (for the 1D string).
 
 . . .
 
-This is how we extract coefficients $a_\mu$ from a given shape: project onto the basis.
+To **normalise** the modes (so they are **orthonormal**), we divide by $\sqrt{L/2}$. This will come handy when we transform between the physical domain and the modal domain.
+
+. . .
+
+Orthogonality is what allows us to extract coefficients independently. 
+
+Cross-terms vanish ($\delta_{\mu\nu}=0$ for $\mu \neq \nu$), so projecting onto $\phi_\mu$ isolates its coefficient.
 
 ## Generalise the Operator: Add Stiffness
 
@@ -280,7 +272,7 @@ The stiff string from week 1:
 
 $$\tvar{\partial^2_t}\, w \;=\; \hat T^2\, \op{\partial^2_x}\, w \;-\; \hat D^2\, \op{\partial^4_x}\, w$$
 
-The spatial operator gains a [**fourth derivative**]{.op-c}.
+The spatial operator gains a fourth derivative.
 
 . . .
 
@@ -300,13 +292,7 @@ The high modes are pushed up disproportionately $\to$ **inharmonicity**.
 
 ## Stiffness $\to$ Inharmonicity
 
-::: {.callout-note}
-**Animation placeholder #4.** Slider for $\hat D$: at $\hat D = 0$, $\omega_\mu$ vs $\mu$ is a straight line; as $\hat D$ ramps up the line bows upward. File: `images/stiffness_toggle.mp4`.
-:::
-
-<!--
-<video src="images/stiffness_toggle.mp4" controls style="width: 100%; max-height: 65vh; display: block; margin: 0 auto;"></video>
--->
+<video src="animations/media/videos/stiffness_toggle/1080p60/StiffnessToggle.mp4" controls style="width: 100%; max-height: 65vh; display: block; margin: 0 auto;"></video>
 
 . . .
 
@@ -333,8 +319,8 @@ $$\begin{aligned}
 
 Two readings of the same operation:
 
-- **Projection** of $w(\cdot, t)$ onto $\xvar{\phi_\mu}$ -- orthogonality of $\{\xvar{\phi_\mu}\}$ makes the picture exact.
-- **Integral transform** with kernel $\xvar{\phi_\mu(x)}$. Here $\xvar{\phi_\mu(x) = \sin(\mu\pi x/L)}$, so this is (a discrete-mode) sine transform.
+- **Projection** of $w(\cdot, t)$ onto $\xvar{\phi_\mu}$, orthogonality of $\{\xvar{\phi_\mu}\}$ makes the picture exact.
+- **Integral transform** with kernel $\xvar{\phi_\mu(x)}$. Here $\xvar{\phi_\mu(x) = \sin(\mu\pi x/L)}$, so this is a sine transform.
 
 ## Projection onto the Modal Basis
 
@@ -406,7 +392,7 @@ $$\mathbf b = \begin{bmatrix} \mathbf 0 \\ \mathbf b_q \end{bmatrix}, \qquad (\m
 
 . . .
 
-$\mathbf A$ is **block-diagonal** in mode pairs $\to$ the $N$ modal ODEs decouple completely. Embarrassingly parallel.
+$\mathbf A$ is **block-diagonal** in mode pairs. The $N$ modal ODEs decouple completely.
 
 ## Tie-back: progressive_string.py
 
@@ -446,9 +432,7 @@ Same equations, same state-space, just JAX'd.
 ## Eigenvalues {style="font-size: 0.85em;"}
 
 ::: {.incremental}
-- **Part 1 (~7 min).** Compute $\lambda_\mu = \mu\pi/L$ and $\lambda_\mu^2 = (\mu\pi/L)^2$ for the ideal Dirichlet string. Plot the first 5 mode shapes $\phi_\mu(x) = \sin(\mu\pi x/L)$.
-- **Part 2 (~8 min).** Add stiffness ($\hat D \ne 0$). Recompute $\omega_\mu^2 = \hat T^2(\mu\pi/L)^2 + \hat D^2(\mu\pi/L)^4$. Plot $\omega_\mu$ vs $\mu$ -- the line bows upward.
-- **Optional.** Build the tridiagonal second-difference matrix $\mathbf D_{xx}$ with stencil $[1,-2,1]/\Delta x^2$. Compute its eigenvalues and plot them against mode index. What shape do you see? How does it compare with the closed-form $-\lambda_\mu^2$?
+- Build a tridiagonal second-difference matrix $\mathbf D_{xx}$ with stencil $[1,-2,1]/\Delta x^2$. Compute its eigenvalues and plot them against mode index. What shape do you see? How does it compare with the closed-form $-\lambda_\mu^2$?
 :::
 
 # 2D Preview: Membranes and Plates
@@ -577,13 +561,7 @@ So $\mathbf D_{xx}$ is the interior stencil **plus a boundary closure**, not jus
 
 ## Stencil Sliding Along the Grid
 
-::: {.callout-note}
-**Animation placeholder #6.** The $[1, -2, 1]$ stencil sliding along a discrete field $\mathbf w$, evaluating $\mathbf D_{xx} \mathbf w$ at each interior point. File: `images/stencil_slide.mp4`.
-:::
-
-<!--
-<video src="images/stencil_slide.mp4" controls style="width: 100%; max-height: 65vh; display: block; margin: 0 auto;"></video>
--->
+<video src="animations/media/videos/stencil_slide/1080p60/StencilSlide.mp4" controls style="width: 100%; max-height: 65vh; display: block; margin: 0 auto;"></video>
 
 . . .
 

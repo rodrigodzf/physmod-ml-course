@@ -1240,7 +1240,11 @@ Which parts should be physics, which parts should be learned, and how do we know
 
 [**Fast differentiable modal simulation of non-linear strings, membranes, and plates**](https://arxiv.org/pdf/2505.05940)
 
+[**Stable Differentiable Modal Synthesis for Learning Nonlinear Dynamics**](https://arxiv.org/pdf/2601.10453)
+
 [**A review of differentiable digital signal processing for music and speech synthesis**](https://arxiv.org/abs/2308.15422)
+
+[**On Neural Differential Equations**, section 5.1: Backpropagation through ODEs](https://arxiv.org/pdf/2202.02435)
 
 Differentiable audio synthesis / DDSP tutorial:
 

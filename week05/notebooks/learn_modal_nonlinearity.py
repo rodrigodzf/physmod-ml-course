@@ -147,7 +147,7 @@ def cosine_burst(
     center_sample=70,
     length=49,
     frequency_hz=600.0,
-    amplitude=1000.0,
+    amplitude=2000.0,
     sample_rate=sample_rate,
 ):
     n = jnp.arange(length)

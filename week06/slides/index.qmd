@@ -1,0 +1,787 @@
+---
+title: "Physics-Informed Neural Networks"
+subtitle: "Differentiable Physical Modelling and Machine Learning for Sound Synthesis"
+author: "Rodrigo Diaz"
+date: "2026-06-11"
+execute-dir: file
+execute:
+  cache: false
+  warning: false
+format:
+  revealjs:
+    theme: dark
+    slide-number: true
+    chalkboard: true
+    smaller: true
+    scrollable: true
+    code-fold: false
+    code-overflow: wrap
+    highlight-style: github
+    footer: "Week 6 -- Physics-Informed Neural Networks"
+    transition: fade
+    math: mathjax
+    auto-play-media: false
+---
+
+## Overview
+
+::: {.incremental}
+- Recap: where Neural ODEs put the physics
+- PINNs as physics-informed **losses**, not special architectures
+- Coordinate networks for fields $w(\mathbf{x},t)$
+- Data, boundary, initial, and residual losses
+- Worked notation: damped wave equation and damped oscillator
+- Inverse problems: learning physical parameters from sparse observations
+- Practical limits for sound synthesis
+:::
+
+::: {.notes}
+Week 5 focused on making the time evolution learnable. This week shifts the question: instead of learning a vector field and then integrating it, we learn a whole space-time function and penalise violations of the differential equation.
+:::
+
+# From Neural ODEs to PINNs
+
+## Week 5 Recap
+
+Neural ODEs describe time evolution through a state-space model:
+
+$$
+\dot{\mathbf h}(t)
+=
+\mathbf F_\theta(\mathbf h(t),t,f(t))
+$$
+
+. . .
+
+The solver produces the trajectory:
+
+$$
+\mathbf h(0)
+\quad\longrightarrow\quad
+\mathbf h(t_1),\mathbf h(t_2),\dots
+$$
+
+. . .
+
+The physics lives inside the vector field or the numerical integrator.
+
+## The PINN Shift
+
+PINNs do not first build a time-stepping simulator.
+
+. . .
+
+They fit a function directly:
+
+$$
+(\mathbf x,t)
+\quad\longmapsto\quad
+w_\theta(\mathbf x,t)
+$$
+
+. . .
+
+Then they ask:
+
+$$
+\text{Does this function satisfy the equation?}
+$$
+
+## Same Ingredients, Different Place
+
+| | Neural ODE | PINN |
+| :--- | :--- | :--- |
+| Learns | vector field or residual force | space-time solution field |
+| Input | state $\mathbf h(t)$, time, forcing | coordinates $(\mathbf x,t)$ |
+| Physics appears in | dynamics / solver | loss function |
+| Main derivative | $d\mathbf h/dt$ during integration | derivatives of $w_\theta$ with respect to inputs |
+| Natural output | trajectory | continuous field |
+
+. . .
+
+Both depend on automatic differentiation, but they differentiate different things.
+
+# Physics-Informed Losses
+
+## The Core Idea
+
+Suppose the physical system is written as:
+
+$$
+\mathcal N[w](\mathbf x,t) = f(\mathbf x,t),
+\qquad
+(\mathbf x,t)\in \Omega\times[0,T]
+$$
+
+. . .
+
+For a neural approximation $w_\theta$, define the residual:
+
+$$
+\mathcal R_\theta(\mathbf x,t)
+=
+\mathcal N[w_\theta](\mathbf x,t)
+-
+f(\mathbf x,t)
+$$
+
+. . .
+
+If $\mathcal R_\theta=0$ everywhere, the network output satisfies the PDE.
+
+## What Is Being Differentiated?
+
+The network input contains coordinates:
+
+$$
+w_\theta(\mathbf x,t)
+=
+\operatorname{MLP}_\theta(\mathbf x,t)
+$$
+
+. . .
+
+Automatic differentiation gives:
+
+$$
+\partial_t w_\theta,\quad
+\partial_t^2 w_\theta,\quad
+\nabla w_\theta,\quad
+\Delta w_\theta,\quad
+\dots
+$$
+
+. . .
+
+These are derivatives of the **output with respect to the input coordinates**, not just derivatives with respect to the network parameters.
+
+## Why This Is Useful
+
+We can train from constraints, not only from dense labelled trajectories.
+
+. . .
+
+The model can see:
+
+::: {.incremental}
+- a few measured samples
+- boundary conditions
+- initial conditions
+- collocation points with no measured target
+- known forcing
+- unknown physical parameters treated as trainable variables
+:::
+
+. . .
+
+The PDE fills in information between sparse observations.
+
+# The PINN Objective
+
+## Four Loss Terms
+
+For a field $w(\mathbf x,t)$, a useful decomposition is:
+
+$$
+\mathcal L(\theta)
+=
+\lambda_{\mathrm{data}}\mathcal L_{\mathrm{data}}
++
+\lambda_{\mathrm{ic}}\mathcal L_{\mathrm{ic}}
++
+\lambda_{\mathrm{bc}}\mathcal L_{\mathrm{bc}}
++
+\lambda_{\mathrm{phys}}\mathcal L_{\mathrm{phys}}
+$$
+
+. . .
+
+The $\lambda$ weights matter. They decide which constraints the optimiser listens to.
+
+## Data Loss
+
+At measured points $(\mathbf x_m,t_m)$:
+
+$$
+\mathcal L_{\mathrm{data}}
+=
+\frac{1}{M}
+\sum_{m=1}^{M}
+\left|
+w_\theta(\mathbf x_m,t_m)-w_m
+\right|^2
+$$
+
+. . .
+
+For audio, the measurement may be a readout rather than the full displacement field:
+
+$$
+y_\theta(t_m)
+=
+\mathbf C\!\left[w_\theta(\cdot,t_m)\right]
+$$
+
+. . .
+
+Then compare $y_\theta(t_m)$ to the recorded signal $y_m$.
+
+## Initial Condition Loss
+
+For a vibrating object:
+
+$$
+w(\mathbf x,0)=w_0(\mathbf x),
+\qquad
+\partial_t w(\mathbf x,0)=v_0(\mathbf x)
+$$
+
+. . .
+
+The PINN loss becomes:
+
+$$
+\mathcal L_{\mathrm{ic}}
+=
+\left\|w_\theta(\mathbf x,0)-w_0(\mathbf x)\right\|^2
++
+\left\|\partial_t w_\theta(\mathbf x,0)-v_0(\mathbf x)\right\|^2
+$$
+
+## Boundary Condition Loss
+
+Fixed string ends:
+
+$$
+w(0,t)=0,
+\qquad
+w(L,t)=0
+$$
+
+. . .
+
+Penalty form:
+
+$$
+\mathcal L_{\mathrm{bc}}
+=
+\left\|w_\theta(0,t)\right\|^2
++
+\left\|w_\theta(L,t)\right\|^2
+$$
+
+. . .
+
+Some constraints can also be built into the network output, but today we keep the simple penalty view.
+
+## Physics Residual Loss
+
+Choose collocation points:
+
+$$
+(\mathbf x_r,t_r)\sim \Omega\times[0,T]
+$$
+
+. . .
+
+Evaluate the residual at those points:
+
+$$
+\mathcal L_{\mathrm{phys}}
+=
+\frac{1}{R}
+\sum_{r=1}^{R}
+\left|
+\mathcal R_\theta(\mathbf x_r,t_r)
+\right|^2
+$$
+
+. . .
+
+No measured displacement is needed at these points.
+
+## Training Recipe
+
+::: {.incremental}
+1. Sample measured data points.
+2. Sample initial and boundary points.
+3. Sample residual collocation points in the domain.
+4. Evaluate $w_\theta$.
+5. Use automatic differentiation to compute the required derivatives.
+6. Form the residual $\mathcal R_\theta$.
+7. Minimise the weighted loss.
+:::
+
+. . .
+
+The simulator is replaced by a differentiable residual calculation.
+
+# Example: Damped Wave Equation
+
+## Equation From Earlier Weeks
+
+For a damped driven string:
+
+$$
+\partial_t^2 w
+=
+\hat T^2\,\partial_x^2 w
+-
+2\hat d_1\,\partial_t w
++
+b(x)f(t)
+$$
+
+. . .
+
+Here:
+
+::: {.incremental}
+- $w(x,t)$ is transverse displacement
+- $\hat T$ is wave speed
+- $\hat d_1$ is damping
+- $s(x,t)=b(x)f(t)$ is the source term
+- for now, assume $s(x,t)$ is known
+:::
+
+## PINN Approximation
+
+Replace the unknown displacement with:
+
+$$
+w(x,t)
+\approx
+w_\theta(x,t)
+$$
+
+. . .
+
+For this equation, the differential operator is:
+
+$$
+\mathcal N[w]
+=
+\left[
+\partial_t^2
+-
+\hat T^2\,\partial_x^2
++
+2\hat d_1\,\partial_t
+\right]w
+$$
+
+. . .
+
+so the PDE is:
+
+$$
+\mathcal N[w](x,t)
+=
+s(x,t),
+\qquad
+s(x,t)=b(x)f(t)
+$$
+
+. . .
+
+The residual is:
+
+$$
+\mathcal R_\theta(x,t)
+=
+\mathcal N[w_\theta](x,t)
+-
+s(x,t)
+$$
+
+. . .
+
+Training pushes $\mathcal R_\theta(x,t)$ toward zero across the space-time domain.
+
+## What Happens To The Force?
+
+In the forward PINN setup, the source is given:
+
+$$
+s(x,t)=b(x)f(t)
+$$
+
+. . .
+
+Examples:
+
+::: {.incremental}
+- free vibration: $s(x,t)=0$
+- measured actuator force: $f(t)$ is known
+- known excitation position: $b(x)$ is fixed
+:::
+
+. . .
+
+Then the network only estimates the field $w_\theta(x,t)$.
+
+## If The Force Is Unknown
+
+Then it becomes an inverse-source problem.
+
+. . .
+
+Introduce a source model:
+
+$$
+s_\psi(x,t)=b_\alpha(x)f_\psi(t)
+$$
+
+. . .
+
+and optimise:
+
+$$
+\mathcal R_{\theta,\psi}(x,t)
+=
+\mathcal N[w_\theta](x,t)
+-
+s_\psi(x,t)
+$$
+
+. . .
+
+This needs extra assumptions. From one audio signal, source shape, source position, and material parameters can trade off against each other.
+
+## Boundary and Initial Constraints
+
+For a fixed string:
+
+$$
+w_\theta(0,t)=0,
+\qquad
+w_\theta(L,t)=0
+$$
+
+. . .
+
+For a plucked initial condition:
+
+$$
+w_\theta(x,0)=w_0(x),
+\qquad
+\partial_t w_\theta(x,0)=0
+$$
+
+. . .
+
+These are not extra simulation steps. They are additional loss terms.
+
+## What Does The Network Learn?
+
+It learns a continuous surface:
+
+$$
+(x,t)\mapsto w_\theta(x,t)
+$$
+
+. . .
+
+After training, we can query:
+
+::: {.incremental}
+- any time $t$ in the trained interval
+- any position $x$ in the trained spatial domain
+- output positions not explicitly sampled during training
+- derivatives such as velocity $\partial_t w_\theta(x,t)$
+:::
+
+. . .
+
+This is attractive for sparse reconstruction, but expensive compared with modal or finite-difference rollout.
+
+# Warm-Up: Damped Oscillator
+
+## Zero-Dimensional Analogue
+
+For one modal coordinate:
+
+$$
+\ddot q(t)
++
+2\gamma \dot q(t)
++
+\omega_0^2 q(t)
+=
+f(t)
+$$
+
+. . .
+
+PINN approximation:
+
+$$
+q(t)\approx q_\theta(t)
+$$
+
+. . .
+
+Residual:
+
+$$
+\mathcal R_\theta(t)
+=
+\ddot q_\theta(t)
++
+2\gamma \dot q_\theta(t)
++
+\omega_0^2 q_\theta(t)
+-
+f(t)
+$$
+
+## Enforcing the ODE
+
+![](images/PINNAnimation.mp4){fig-align="center"}
+
+## Training Process
+
+![](images/pinn_training.webm){fig-align="center"}
+
+::: {.notes}
+Use this as the simplest visual example: the network is not rolled out like an ODE solver. It is shaped by data, initial conditions, and residual penalties until its graph satisfies the ODE.
+:::
+
+## Companion Notebook
+
+The runnable Week 6 example is:
+
+```sh
+uv run python week06/notebooks/pinn_harmonic_oscillator.py
+```
+
+. . .
+
+It fits $q_\theta(t)$ from sparse early samples, initial conditions, and the oscillator residual while also learning $\sigma_2$ and $\omega_0$.
+
+# Inverse Problems
+
+## Learning Unknown Physical Parameters
+
+Separate network parameters from physical parameters:
+
+$$
+\theta
+=
+\text{network weights},
+\qquad
+\boldsymbol\eta
+=
+\text{physical coefficients}
+$$
+
+. . .
+
+For example:
+
+$$
+\boldsymbol\eta
+=
+\{\hat T,\hat d_1,\hat D,K\}
+$$
+
+. . .
+
+Now define:
+
+$$
+\mathcal R_{\theta,\boldsymbol\eta}
+=
+\mathcal N_{\boldsymbol\eta}[w_\theta]-f
+$$
+
+and optimise both $\theta$ and $\boldsymbol\eta$.
+
+## Audio Motivation
+
+Recordings are usually sparse observations of the field:
+
+$$
+y(t)
+=
+\mathbf C[w(\cdot,t)]
+$$
+
+. . .
+
+The inverse question is:
+
+$$
+\text{Which physical parameters explain this measured sound?}
+$$
+
+. . .
+
+PINNs are useful when the data alone is too sparse, but the governing equation is trusted.
+
+## What Must Be Identifiable?
+
+The optimiser can only recover parameters that leave a detectable signature in the observations.
+
+. . .
+
+For audio this depends on:
+
+::: {.incremental}
+- excitation position and spectrum
+- readout position
+- signal duration
+- damping and noise
+- whether multiple parameter settings produce similar spectra
+- whether the boundary and forcing assumptions are correct
+:::
+
+. . .
+
+A physics-informed loss does not remove observability problems.
+
+# Practical Caveats
+
+## Why PINNs Are Hard To Train
+
+::: {.incremental}
+- The residual can contain high-order derivatives.
+- Oscillatory solutions are difficult for standard MLPs.
+- Loss terms can have incompatible scales.
+- Collocation sampling changes what the model prioritises.
+- Optimisers may satisfy boundary conditions while missing wave propagation.
+- Long time intervals amplify small residual errors.
+:::
+
+## Spectral Bias
+
+Standard MLPs tend to learn smooth, low-frequency structure first.
+
+. . .
+
+That is a problem for sound:
+
+::: {.incremental}
+- high modes matter perceptually
+- attacks contain broadband transients
+- stiff strings and plates are dispersive
+- damping can hide modelling errors in short clips
+:::
+
+. . .
+
+Architectures with Fourier features or sinusoidal activations often help, but they do not make training automatic.
+
+## PINNs Are Usually Not Real-Time Synthesisers
+
+Evaluating a trained PINN at audio rate can be expensive.
+
+. . .
+
+Training is much more expensive:
+
+::: {.incremental}
+- many collocation points
+- repeated automatic differentiation
+- high precision often helps
+- inverse problems require repeated residual evaluations
+:::
+
+. . .
+
+For real-time audio, PINNs are usually better as analysis, fitting, or model-discovery tools.
+
+## When They Make Sense
+
+Use PINNs when:
+
+::: {.incremental}
+- measurements are sparse
+- the governing equation is trusted
+- boundary or initial conditions matter
+- unknown physical parameters are the target
+- you want a continuous field, not just an audio signal
+:::
+
+. . .
+
+Use modal, FDTD, state-space, or neural ODE methods when the goal is fast rollout.
+
+# Summary
+
+## Week 6 Takeaway
+
+PINNs fit a coordinate function:
+
+$$
+w_\theta(\mathbf x,t)
+$$
+
+. . .
+
+and train it with:
+
+$$
+\mathcal L
+=
+\lambda_{\mathrm{data}}\mathcal L_{\mathrm{data}}
++
+\lambda_{\mathrm{ic}}\mathcal L_{\mathrm{ic}}
++
+\lambda_{\mathrm{bc}}\mathcal L_{\mathrm{bc}}
++
+\lambda_{\mathrm{phys}}\left\|\mathcal R_\theta\right\|^2
+$$
+
+. . .
+
+The physics is not in a solver loop. It is in the residual.
+
+## The Main Tradeoff
+
+::: {.incremental}
+- Strong prior: the equation constrains the learned field.
+- Sparse data: measurements do not need to cover the full domain.
+- Inverse problems: physical coefficients can be optimised directly.
+- Cost: training is slow and sensitive.
+- Audio caveat: high-frequency, long-time behaviour is especially demanding.
+:::
+
+## Bridge Forward
+
+PINNs learn one solution field for one problem setup.
+
+. . .
+
+Next question:
+
+$$
+\text{Can we learn the operator that maps problem setup to solution?}
+$$
+
+. . .
+
+That leads toward neural operators and other models that learn families of PDE solutions.
+
+## Other PINN Variants
+
+The same idea can be combined with different physical structure.
+
+::: {.incremental}
+- **Lagrangian PINNs:** encode equations through an action or variational principle.
+- **Hamiltonian PINNs:** preserve energy-based structure for conservative systems.
+- **Port-Hamiltonian PINNs:** include energy flow, dissipation, and external ports.
+- **Domain-decomposed PINNs:** split hard space-time domains into smaller pieces.
+:::
+
+. . .
+
+The common theme is the same: choose a structure, then make violations of that structure trainable.
+
+## Resources: Core PINNs
+
+- Raissi, Perdikaris, Karniadakis (2019), original PINN paper: <https://doi.org/10.1016/j.jcp.2018.10.045>
+- Moseley, Markham, Nissen-Meyer (2023), Finite Basis PINNs: <https://doi.org/10.1007/s10444-023-10065-9>
+- Lagrangian PINNs: Mojgani, Balajewicz, Hassanzadeh (2022): <https://arxiv.org/abs/2205.02902>
+- Hamiltonian neural networks: Greydanus, Dzamba, Yosinski (2019): <https://proceedings.neurips.cc/paper/2019/hash/26cd8ecadce0d4efd6cc8a8725cbd1f8-Abstract.html>
+- Port-Hamiltonian neural networks: Desai et al. (2021): <https://doi.org/10.1103/PhysRevE.104.034312>

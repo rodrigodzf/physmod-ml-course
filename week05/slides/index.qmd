@@ -1957,9 +1957,9 @@ Learn a function and penalise equation residuals:
 $$
 \mathcal R_\theta
 =
-\partial_t u_\theta
+\partial_t w_\theta
 -
-\mathcal L u_\theta
+\mathcal L w_\theta
 $$
 
 The loss encourages the solution to satisfy the PDE.

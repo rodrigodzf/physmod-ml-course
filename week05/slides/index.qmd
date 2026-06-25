@@ -26,15 +26,8 @@ format:
 ## Overview
 
 ::: {.incremental}
-- Recap: differentiable simulators, losses, and constrained parameter learning
-- Revisiting continuous-time state-space models through differentiable solvers
-- Fixed-step ODE solvers as differentiable program blocks
-- Neural ODEs as learnable continuous-time dynamics on the audio grid
-- Backpropagating through trajectories: direct AD, adjoints, and practical caveats
-- Hybrid physical-neural models for modal sound synthesis
-- Mini task: learn a missing force or residual from modal trajectories
-- Stability, energy, stiffness, and solver choices for audio-rate systems
-- Bridge to next week: physics-informed losses and residual constraints
+- Neural ODEs: differentiable solvers, trajectories, and audio-rate dynamics
+- Hybrid physical-neural modal models: fit a linear backbone, then inspect a learned residual
 :::
 
 # Recap: Differentiable Audio Models
@@ -130,7 +123,7 @@ $$
 
 The optimiser could change numbers inside the equations, but not the equation family itself.
 
-# Continuous-Time State-Space Models
+# Recap: Continuous-Time State-Space Models
 
 ## The State-Space View
 
@@ -707,6 +700,10 @@ These half-step velocities are intermediate quantities. The stored state will be
 
 ## Velocity Verlet Half-Step
 
+:::: {.columns}
+
+::: {.column width="42%"}
+
 If velocity is available at the integer time $n$, construct the half-step velocity with a half kick:
 
 $$
@@ -718,6 +715,31 @@ $$
 $$
 
 The integer time position and integer time velocity are related by a half step:
+
+$$
+\begin{align*}
+\mathbf q^{n+1} &= \mathbf q^n + \Delta t\, \mathbf v^{n+\frac{1}{2}}\\
+\mathbf v^{n+1} &= \mathbf v^{n+\frac{1}{2}} + \frac{\Delta t}{2}\mathbf a^{n+1}
+\end{align*}
+$$
+
+:::
+
+::: {.column width="58%"}
+
+![](figures/hairer.png){width="112%" fig-align="center"}
+
+::: {style="font-size: 0.55em;"}
+Source: Hairer et al., *Geometric numerical integration illustrated by the Störmer-Verlet method*.
+:::
+
+:::
+
+::::
+
+## Damped Velocity Verlet
+
+Start from the same two updates:
 
 $$
 \begin{align*}
@@ -1548,10 +1570,10 @@ Neural ODEs are often associated with the adjoint method.
 
 . . .
 
-Define the adjoint:
+Define the adjoint sensitivity:
 
 $$
-\mathbf a(t)
+\boldsymbol\lambda(t)
 =
 \frac{\partial J}{\partial \mathbf h(t)}
 $$
@@ -1561,10 +1583,10 @@ $$
 It evolves backward in time:
 
 $$
-\frac{d\mathbf a}{dt}
+\frac{d\boldsymbol\lambda}{dt}
 =
 -
-\mathbf a^\top
+\boldsymbol\lambda^\top
 \frac{\partial \mathbf F_\theta}{\partial \mathbf h}
 $$
 
@@ -1739,20 +1761,20 @@ $$
 \text{automatically stable}
 $$
 
-## Mini Task: Learn a Missing Residual
+## Notebook Activity: Diagnose a Residual Fit
 
-Target:
+The code already:
 
 ::: {.incremental}
-- simulate a modal oscillator with a known nonlinear force
-- hide the nonlinear force from the model
-- keep the linear modal backbone
-- train a small residual network to match the target trajectory
+- simulates a modal oscillator with a known nonlinear force
+- hides the nonlinear force from the fitted model
+- fits a constrained linear modal backbone
+- fine-tunes the backbone with a residual MLP
 :::
 
 . . .
 
-Compare three cases:
+The activity is to compare three cases:
 
 $$
 \text{linear}
@@ -1764,7 +1786,7 @@ $$
 
 . . .
 
-Listen, plot trajectories, and inspect the learned residual.
+Listen, plot trajectories, inspect the learned residual, and decide what the fit explains.
 
 ## Notebook Training Choice
 

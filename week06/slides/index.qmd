@@ -778,7 +778,7 @@ The same idea can be combined with different physical structure.
 
 The common theme is the same: choose a structure, then make violations of that structure trainable.
 
-## Resources
+## Resources: Core PINNs
 
 - Raissi, Perdikaris, Karniadakis (2019), original PINN paper: <https://doi.org/10.1016/j.jcp.2018.10.045>
 - Moseley, Markham, Nissen-Meyer (2023), Finite Basis PINNs: <https://doi.org/10.1007/s10444-023-10065-9>

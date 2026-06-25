@@ -1,0 +1,1234 @@
+---
+title: "Neural Operators"
+subtitle: "Differentiable Physical Modelling and Machine Learning for Sound Synthesis"
+author: "Rodrigo Diaz"
+date: "2026-06-25"
+execute-dir: file
+execute:
+  cache: false
+  warning: false
+format:
+  revealjs:
+    theme: dark
+    slide-number: true
+    chalkboard: true
+    smaller: true
+    scrollable: true
+    code-fold: false
+    code-overflow: wrap
+    highlight-style: github
+    footer: "Week 7 -- Neural Operators"
+    transition: fade
+    math: mathjax
+    auto-play-media: false
+---
+
+## Overview
+
+::: {.incremental}
+- From PINNs for one setup to operators for many setups
+- Functions on grids: encoding, reconstruction, aliasing, and resolution transfer
+- Two operator architectures: DeepONet and FNO
+- Sound example: a nonlinear 1D string family
+- Practical caveats and bridge to deep state-space models
+:::
+
+::: {.notes}
+The main teaching point is that neural operators are not just large neural
+networks on grids. They attempt to learn maps between functions, and every
+practical implementation has to decide how continuous functions are represented,
+processed, and reconstructed.
+:::
+
+# From PINNs To Operators
+
+## Week 6 Recap
+
+PINNs fit one coordinate function:
+
+$$
+(\mathbf x,t)
+\longmapsto
+w_\theta(\mathbf x,t)
+$$
+
+. . .
+
+and train it with data, boundary, initial, and physics residual losses:
+
+$$
+\mathcal L
+=
+\lambda_{\mathrm{data}}\mathcal L_{\mathrm{data}}
++
+\lambda_{\mathrm{ic}}\mathcal L_{\mathrm{ic}}
++
+\lambda_{\mathrm{bc}}\mathcal L_{\mathrm{bc}}
++
+\lambda_{\mathrm{phys}}\left\|\mathcal R_\theta\right\|^2.
+$$
+
+. . .
+
+The output is a **solution field** for one problem setup.
+
+## The Limitation
+
+Suppose the equation is fixed, but the setup changes:
+
+::: {.incremental}
+- a different initial displacement
+- a different forcing function
+- a different material parameter
+- a different damping profile
+- a different boundary input
+:::
+
+. . .
+
+A standard PINN usually trains a new coordinate function for each new setup.
+
+. . .
+
+That is a solution learner, not yet a reusable simulator.
+
+## The Operator Question
+
+Instead of learning one solution:
+
+$$
+(\mathbf x,t)
+\mapsto
+w(\mathbf x,t)
+$$
+
+. . .
+
+can we learn the whole map:
+
+$$
+\text{problem setup}
+\quad\longmapsto\quad
+\text{solution field}?
+$$
+
+. . .
+
+This map is an **operator** because both its input and output can be functions.
+
+## Solution Operator
+
+For a PDE written informally as:
+
+$$
+\mathcal N[u; a] = 0
+$$
+
+where $u$ is the unknown solution and $a$ is the **input problem data**:
+
+::: {.incremental}
+- an initial condition, forcing function, coefficient field, boundary data, or parameters
+- possibly a scalar, vector, function, or a bundle of several such objects
+:::
+
+. . .
+
+The solution operator maps that setup data to the corresponding solution:
+
+$$
+\mathcal G:
+a
+\longmapsto
+u.
+$$
+
+. . .
+
+Examples:
+
+$$
+\mathcal G:
+f(x,t)
+\mapsto
+w(x,t),
+\qquad
+\mathcal G:
+w_0(x)
+\mapsto
+w(x,t),
+\qquad
+\mathcal G:
+c(x)
+\mapsto
+u(x).
+$$
+
+## Solution Operator
+
+Weeks 1--6 used versions of the same pipeline:
+
+$$
+\text{parameters}
++
+\text{excitation}
+\quad\longrightarrow\quad
+\text{simulator}
+\quad\longrightarrow\quad
+\text{sound}.
+$$
+
+. . .
+
+Neural operators try to learn a surrogate for the middle:
+
+$$
+\mathcal G_\theta
+\approx
+\mathcal G.
+$$
+
+. . .
+
+The goal is not one trajectory, but a family of trajectories.
+
+## Why This Matters For Sound
+
+For physical modelling, the expensive part is often not one simulation.
+
+. . .
+
+It is evaluating many related simulations:
+
+::: {.incremental}
+- parameter search
+- inverse design
+- dataset generation
+- real-time control over material and geometry
+- interactive synthesis with changing excitations
+:::
+
+. . .
+
+A neural operator is useful only if it generalises across the family we care about.
+
+# Functions, Grids, And Representations
+
+## The Ideal Object
+
+On paper:
+
+$$
+\mathcal G:
+\mathcal X
+\longrightarrow
+\mathcal Y
+$$
+
+where $\mathcal X$ and $\mathcal Y$ are function spaces.
+
+. . .
+
+For example:
+
+$$
+a \in \mathcal X
+\quad\text{is a forcing function,}
+\qquad
+u \in \mathcal Y
+\quad\text{is a displacement field.}
+$$
+
+. . .
+
+The operator should not depend on a particular grid.
+
+## The Computer Object
+
+On a digital computer, we store arrays:
+
+$$
+a_h
+=
+\left[
+a(x_1), a(x_2), \ldots, a(x_N)
+\right]
+$$
+
+. . .
+
+and train a finite-dimensional map:
+
+$$
+G_h:
+\mathbb R^{N_{\mathrm{in}}}
+\longrightarrow
+\mathbb R^{N_{\mathrm{out}}}.
+$$
+
+. . .
+
+This is necessary, but it creates a problem:
+
+$$
+\text{Did we learn } \mathcal G
+\quad\text{or only}\quad
+G_h?
+$$
+
+## Same Function, Many Sample Arrays
+
+The same physical field can be sampled on different grids:
+
+::: {.incremental}
+- coarse grid: $[a(x_1),\ldots,a(x_N)]$
+- fine grid: $[a(x'_1),\ldots,a(x'_{2N})]$
+- shifted or staggered grid points
+- irregular sensor locations, for architectures that accept coordinates
+:::
+
+. . .
+
+For FNO, the input is usually grid samples. Fourier coefficients appear **inside** the spectral layers after the FFT.
+
+. . .
+
+Changing the grid should not change the underlying physical operator.
+
+## Encode-Learn-Reconstruct
+
+The useful pattern is:
+
+$$
+a
+\xrightarrow{\mathcal E}
+a_h
+\xrightarrow{G_h}
+u_h
+\xrightarrow{\mathcal R}
+u.
+$$
+
+. . .
+
+where:
+
+::: {.incremental}
+- $\mathcal E$ encodes or samples the input function
+- $G_h$ is the discrete learned map
+- $\mathcal R$ reconstructs or evaluates the output function
+:::
+
+. . .
+
+The transformation is not cosmetic. It decides what the model can learn stably.
+
+## A Familiar Version: Modal Synthesis
+
+Weeks 2--3 already used this idea physically.
+
+$$
+w(x,t)
+=
+\sum_{\mu=1}^{N}
+\phi_\mu(x)q_\mu(t)
+$$
+
+. . .
+
+The transform:
+
+$$
+w(x,t)
+\longleftrightarrow
+\mathbf q(t)
+$$
+
+makes the linear evolution easier.
+
+. . .
+
+Then the output field or audio signal is reconstructed from the modal state.
+
+## Operator Learning Version
+
+Neural operators use the same broad idea:
+
+$$
+\text{function}
+\quad\longrightarrow\quad
+\text{representation}
+\quad\longrightarrow\quad
+\text{learned evolution/map}
+\quad\longrightarrow\quad
+\text{function}.
+$$
+
+. . .
+
+Different architectures choose different representations.
+
+. . .
+
+DeepONet uses learned coefficients and learned coordinate basis functions.
+
+FNO uses channels on a grid and learned operations in Fourier space.
+
+## A Larger Literature
+
+Neural operators are now a broad family, not one architecture.
+
+| Family | Representation idea | Examples |
+|---|---|---|
+| Branch/trunk | learned coefficients + coordinate basis | DeepONet |
+| Kernel/integral | learned nonlocal integral layers | GNO, MGNO, low-rank NO |
+| Spectral | transform to a basis where global mixing is cheap | FNO, AFNO, WNO, LNO |
+| Convolutional | continuous-aware CNN-style multiscale maps | CNO |
+| Representation-aware | control aliasing between grids/frames | ReNO |
+
+: {.striped}
+
+. . .
+
+The common question is the same:
+
+$$
+\text{Which representation makes the operator easiest to learn and reconstruct?}
+$$
+
+# Discrete-Continuous Equivalence
+
+## What Should Be Equivalent?
+
+Let:
+
+$$
+\mathcal G:
+\mathcal X
+\to
+\mathcal Y
+$$
+
+be the continuous operator.
+
+. . .
+
+Let:
+
+$$
+G_h:
+X_h
+\to
+Y_h
+$$
+
+be the learned discrete map.
+
+. . .
+
+For the same input function $a \in \mathcal X$, two routes should agree:
+
+::: {.incremental}
+- **continuous route:** solve first, giving $u = \mathcal G(a)$
+- **discrete route:** encode $a$, apply $G_h$ to arrays, then reconstruct a function
+:::
+
+. . .
+
+As an operator statement:
+
+$$
+\mathcal G
+\approx
+\mathcal R_h
+\circ
+G_h
+\circ
+\mathcal E_h.
+$$
+
+## Aliasing Error
+
+Here, **aliasing error** means representation mismatch:
+
+$$
+\text{does the answer change because we chose this grid or encoding?}
+$$
+
+. . .
+
+For the same setup $a$, compare:
+
+$$
+\text{true route:}
+\quad
+\mathcal G(a)
+$$
+
+with:
+
+$$
+\text{learned discrete route:}
+\quad
+\mathcal R_h\!\left(G_h(\mathcal E_h(a))\right).
+$$
+
+. . .
+
+The error is just the gap between those two outputs:
+
+$$
+\varepsilon_h(a)
+=
+\mathcal G(a)
+-
+\mathcal R_h\!\left(G_h(\mathcal E_h(a))\right).
+$$
+
+. . .
+
+Small error means the learned array model behaves like the intended continuous operator, not just a grid-specific artifact.
+
+## Why This Is Stronger Than "Works On This Grid"
+
+If a network only learns:
+
+$$
+G_h:
+\mathbb R^N
+\to
+\mathbb R^M
+$$
+
+it may be accurate at one resolution and fail after resampling.
+
+. . .
+
+Discrete-continuous equivalence asks for a stronger property:
+
+$$
+\text{the array computation should correspond to an underlying function operator.}
+$$
+
+. . .
+
+This is the difference between learning a table of numbers and learning a physical map.
+
+## Change Of Grid
+
+Suppose we have two grids, $h$ and $h'$.
+
+. . .
+
+If both represent the same continuous operator, changing grids should commute with the learned map:
+
+$$
+G_{h'}
+\approx
+\mathcal E_{h'}
+\circ
+\mathcal R_h
+\circ
+G_h
+\circ
+\mathcal E_h
+\circ
+\mathcal R_{h'}.
+$$
+
+. . .
+
+When this fails, the model is resolution dependent.
+
+. . .
+
+For audio, that can mean different spectra, phase drift, or unstable rollouts after changing sample rate.
+
+## Where Aliasing Enters
+
+The equivalence is only as good as the representation.
+
+::: {.incremental}
+- undersampled high frequencies alias
+- sharp transients need many modes
+- discontinuities are hard for global bases
+- boundary conditions can break naive Fourier assumptions
+- nonlinearities can generate frequencies not present in the input
+:::
+
+. . .
+
+This is why representation choice is a modelling decision, not an implementation detail.
+
+## Why Plain CNNs Are Not Enough
+
+A standard CNN layer is a discrete convolution:
+
+$$
+(Kc)[m]
+=
+\sum_{i=-s}^{s}
+k_i\,c[m-i].
+$$
+
+. . .
+
+The kernel is tied to a particular grid spacing.
+
+. . .
+
+After changing resolution, the same array kernel no longer represents the same continuous convolution.
+
+. . .
+
+This is the core warning in the CDE/ReNO viewpoint.
+
+# DeepONet
+
+## DeepONet In One Equation
+
+DeepONet represents an operator by combining:
+
+::: {.incremental}
+- input samples $\mathbf a = [a(x_1),\ldots,a(x_m)]$, where $a$ is the input function and $x_i$ are sensor points
+- a **branch net** $b_\theta$: maps $\mathbf a$ to $p$ coefficients $b_r(\mathbf a)$
+- an output query coordinate $y \in \Omega_{\mathrm{out}}$; for a wave problem, often $y=(x,t)$
+- a **trunk net** $t_\theta$: maps $y$ to $p$ basis values $t_r(y)$
+:::
+
+. . .
+
+The predicted output value at coordinate $y$ is:
+
+$$
+\mathcal G_\theta(a)(y)
+=
+\sum_{r=1}^{p}
+b_r(\mathbf a)\,
+t_r(y).
+$$
+
+. . .
+
+During training we evaluate this at chosen query points $y_j$ -- often a grid, random points, or measured sensor locations.
+
+## The Transformation View
+
+DeepONet makes the encode-reconstruct structure explicit.
+
+. . .
+
+Branch net:
+
+$$
+\mathbf a
+\longmapsto
+\mathbf b(a)
+$$
+
+learns coefficients from the input function.
+
+. . .
+
+Trunk net:
+
+$$
+y
+\longmapsto
+\mathbf t(y)
+$$
+
+learns coordinate-dependent basis functions.
+
+. . .
+
+At each query coordinate $y$, DeepONet multiplies the branch coefficients by the trunk basis values:
+
+$$
+\mathbf b(a)^\top \mathbf t(y)
+=
+\sum_{r=1}^{p}
+b_r(\mathbf a)t_r(y).
+$$
+
+. . .
+
+That scalar is the predicted output value $\mathcal G_\theta(a)(y)$.
+
+## Why It Is Operator-Like
+
+The output is not just one vector.
+
+. . .
+
+After training, we can evaluate:
+
+$$
+\mathcal G_\theta(a)(y)
+$$
+
+at new coordinates $y$.
+
+. . .
+
+That is the back-transformation: latent coefficients become a continuous output field through the trunk.
+
+## DeepONet Caveats
+
+::: {.incremental}
+- Sensor locations are part of the representation.
+- The branch net may still be tied to a fixed input discretisation.
+- Output evaluation is flexible, but input encoding can limit resolution transfer.
+- The learned basis must carry the oscillatory or transient structure of the target.
+:::
+
+. . .
+
+For sound, high-frequency phase accuracy is a hard test.
+
+# Fourier Neural Operators
+
+## FNO Motivation
+
+Many physical operators are easier in a transformed domain.
+
+. . .
+
+For a translation-invariant convolution:
+
+$$
+(Kv)(x)
+=
+\int
+\kappa(x-y)v(y)\,dy
+$$
+
+. . .
+
+After a Fourier transform, this global convolution becomes mode-by-mode multiplication:
+
+$$
+\widehat{Kv}_k
+=
+\hat\kappa_k\,\hat v_k.
+$$
+
+. . .
+
+where:
+
+::: {.incremental}
+- $\hat v_k$ is the Fourier coefficient of the input at frequency $k$
+- $\hat\kappa_k$ is the Fourier coefficient of the convolution kernel
+- $\widehat{Kv}_k$ is the output coefficient at the same frequency
+:::
+
+. . .
+
+So each frequency $k$ is scaled independently. That is the sense in which Fourier space makes the operation "diagonal".
+
+. . .
+
+Multiplication in frequency is the back door to a global spatial operator.
+
+## FNO Pipeline
+
+An FNO first lifts input channels into a feature field:
+
+$$
+a(x)
+\xrightarrow{P}
+v_0(x)
+\in
+\mathbb R^d.
+$$
+
+. . .
+
+Meaning:
+
+::: {.incremental}
+- for a string, the input might start as displacement $w(x)$, or displacement plus velocity
+- $P$ is a learned pointwise lifting layer
+- after lifting, each position carries $d$ channels: $v_0(x) = [v_{0,1}(x),\ldots,v_{0,d}(x)]$
+- these hidden channels help predict the output field, but only the final projection has to become physical displacement again
+:::
+
+. . .
+
+Each spectral layer then applies:
+
+$$
+v_{\ell+1}(x)
+=
+\sigma\left(
+W_\ell v_\ell(x)
++
+\mathcal F^{-1}
+\left[
+R_\ell(k)\,
+\mathcal F[v_\ell](k)
+\right](x)
+\right).
+$$
+
+. . .
+
+The learned weights $R_\ell(k)$ act on retained Fourier modes.
+
+## Lift, Spectral Layers, Project
+
+The full architecture is usually:
+
+$$
+a(x)
+\xrightarrow{P}
+v_0(x)
+\xrightarrow{\text{spectral layers}}
+v_L(x)
+\xrightarrow{Q}
+u(x).
+$$
+
+. . .
+
+where:
+
+::: {.incremental}
+- $P$ lifts input channels into a wider feature field
+- spectral layers mix global information through Fourier modes
+- $Q$ projects feature channels back to the physical output
+:::
+
+. . .
+
+This is another encode-learn-reconstruct pipeline.
+
+## What Is Learned In Fourier Space?
+
+Only a finite number of modes are retained:
+
+$$
+|k|
+\le
+k_{\max}.
+$$
+
+. . .
+
+The network learns complex-valued matrices:
+
+$$
+R_\ell(k)
+\in
+\mathbb C^{d\times d}
+$$
+
+for each retained mode.
+
+. . .
+
+Higher modes are truncated or passed only through the pointwise path.
+
+## Why FNO Can Transfer Resolution
+
+The learned parameters are attached to Fourier modes, not directly to grid indices.
+
+. . .
+
+If a new grid resolves the same modes, the same spectral weights can be applied after an FFT.
+
+. . .
+
+This is the practical reason FNOs can often evaluate on a different resolution from training.
+
+. . .
+
+It is not magic: unresolved content still aliases or disappears.
+
+## What FNO Adds Beyond Modal Methods
+
+Modal synthesis picks a physical basis and known dynamics:
+
+$$
+\phi_\mu(x),
+\qquad
+\ddot q_\mu
++
+2\gamma_\mu\dot q_\mu
++
+\omega_\mu^2 q_\mu
+=
+b_\mu f(t).
+$$
+
+. . .
+
+FNO keeps a global basis idea, but learns channel mixing at each retained Fourier mode.
+
+. . .
+
+The nonlinear activations between spectral layers then let modes influence one another across layers.
+
+. . .
+
+It can represent families where deriving a clean modal model is inconvenient.
+
+## What FNO Does Not Give For Free
+
+::: {.incremental}
+- exact boundary conditions
+- exact conservation or passivity
+- guaranteed stability under repeated rollout
+- correct extrapolation outside the training distribution
+- perceptually correct phase at audio rate
+:::
+
+. . .
+
+The architecture is a useful prior, not a physical law.
+
+# A Sound Modelling Example
+
+## Nonlinear String Family
+
+The notebook uses a damped nonlinear modal string generator.
+
+. . .
+
+The string parameters and solver are fixed. The setup varies through the initial state:
+
+$$
+\mathcal G:
+\left(w_0(x),v_0(x)\right)
+\longmapsto
+\left(w(x,t),\partial_t w(x,t)\right).
+$$
+
+## What Goes Into The Network?
+
+Each training example describes **one string setup**.
+
+. . .
+
+In the one-shot notebook:
+
+::: {.incremental}
+- initial displacement $w_0(x)$
+- initial velocity $v_0(x)$, zero in this generated dataset
+- coordinate channel $x$
+:::
+
+. . .
+
+Targets:
+
+::: {.incremental}
+- future displacement and velocity over a short time window
+- or one residual state update for autoregressive rollout
+:::
+
+## What Makes It An Operator?
+
+To learn an operator, the dataset must contain many setups:
+
+::: {.incremental}
+- different random initial modal displacements
+- the same fixed string parameters
+- no external forcing in this tiny example
+:::
+
+. . .
+
+The same network sees all of these as inputs:
+
+$$
+\text{setup}
+\longmapsto
+\text{solution}.
+$$
+
+. . .
+
+With only one setup, it is just fitting one simulation.
+
+## One-Shot Operator
+
+One option:
+
+$$
+\mathcal G_\theta:
+\left(w_0,v_0\right)
+\longmapsto
+\mathbf s(t_1),\ldots,\mathbf s(t_T),
+\qquad
+\mathbf s=(w,\partial_t w).
+$$
+
+. . .
+
+This is a direct surrogate for a whole simulation window.
+
+. . .
+
+Good for:
+
+::: {.incremental}
+- fast batch prediction
+- inverse design
+- parameter sweeps
+:::
+
+. . .
+
+Hard for long audio because the output field is large.
+
+## Time-Step Operator
+
+Another option:
+
+$$
+\mathcal T_\theta:
+\mathbf s^n
+\longmapsto
+\Delta \mathbf s^n,
+\qquad
+\mathbf s^{n+1}=\mathbf s^n+\Delta \mathbf s^n.
+$$
+
+. . .
+
+Then roll out:
+
+$$
+\mathbf s^0
+\quad\longrightarrow\quad
+\mathbf s^1
+\quad\longrightarrow\quad
+\cdots
+$$
+
+. . .
+
+This looks more like a learned finite-difference update.
+
+## Tradeoff
+
+| | One-shot solution operator | Time-step operator |
+|---|---|---|
+| Output | whole field/window | next field/state |
+| Cost per call | larger | smaller |
+| Long-time use | no recurrence error inside window | rollout error accumulates |
+| Audio fit | can use window losses | must control stability |
+| Physics analogy | Green's function / solver call | FDTD update |
+
+: {.striped}
+
+## Dataset Requirement
+
+Unlike a PINN, an FNO is usually supervised by many solved examples:
+
+$$
+\left\{
+a_i,\mathcal G(a_i)
+\right\}_{i=1}^{N}.
+$$
+
+. . .
+
+Those examples often come from a numerical solver.
+
+. . .
+
+So the cost moves:
+
+$$
+\text{expensive offline data generation}
+\quad\longrightarrow\quad
+\text{fast online surrogate}.
+$$
+
+## Companion Notebooks
+
+Two small FNO examples use the same nonlinear string generator:
+
+::: {.incremental}
+- `fno_wave_operator.py`: one-shot map from the first state to the whole short trajectory
+- `fno_wave_operator_ar.py`: one-step map rolled out autoregressively
+- both compare held-out trajectories and include a simple resolution-transfer probe
+:::
+
+# Practical Caveats
+
+## Boundary Conditions
+
+Fourier modes are natural for periodic domains.
+
+. . .
+
+Many instruments are not periodic:
+
+::: {.incremental}
+- fixed string ends
+- clamped or free plate boundaries
+- radiation boundary conditions
+- contact constraints
+:::
+
+. . .
+
+Common workarounds:
+
+::: {.incremental}
+- use padding or domain extension
+- use sine/cosine transforms for simple boundaries
+:::
+
+## Phase And High Frequencies
+
+Audio is unforgiving.
+
+. . .
+
+Small field errors can become audible when they create:
+
+::: {.incremental}
+- phase drift
+- wrong modal decay
+- missing high-frequency transients
+- shifted beating patterns
+- unstable feedback in repeated rollout
+:::
+
+. . .
+
+A low relative field error is not automatically a good sound.
+
+## Stability
+
+A one-step operator is a dynamical system after rollout:
+
+$$
+\mathbf h^{n+1}
+=
+\mathcal T_\theta(\mathbf h^n,\mathbf h^{n-1},\ldots).
+$$
+
+. . .
+
+The training loss may only see short windows.
+
+. . .
+
+For synthesis, we also care about:
+
+::: {.incremental}
+- long-term energy behaviour
+- bounded output
+- response to unseen excitations
+- sample-rate changes
+:::
+
+## Resolution Transfer Test
+
+A useful test:
+
+::: {.incremental}
+- train on grid size $N$
+- evaluate on grid size $2N$
+- compare against a solver at $2N$
+- restrict the $2N$ prediction back to $N$ and compare with the $N$-grid prediction
+:::
+
+. . .
+
+This directly probes whether the model learned a function-space operator or a grid map.
+
+## When Neural Operators Make Sense
+
+::: {.incremental}
+- many related solves are needed
+- the family of systems is known in advance
+- offline data generation is affordable
+- approximate fast evaluation is valuable
+- the representation matches the physics well enough
+:::
+
+. . .
+
+They are less attractive when one exact solve is cheap or when the target distribution is too broad.
+
+# Summary
+
+## Week 7 Takeaway
+
+Neural operators learn:
+
+$$
+\mathcal G:
+\text{function}
+\longmapsto
+\text{function}.
+$$
+
+. . .
+
+Practical implementations use:
+
+$$
+a
+\xrightarrow{\mathcal E}
+a_h
+\xrightarrow{G_h}
+u_h
+\xrightarrow{\mathcal R}
+u.
+$$
+
+. . .
+
+The representation is part of the model.
+
+## The Main Tradeoff
+
+::: {.incremental}
+- Stronger target than standard networks: learn a family of solutions.
+- Useful prior: operate on functions, not just fixed vectors.
+- FNO advantage: global spectral mixing and practical resolution transfer.
+- Cost: many supervised solves are usually needed.
+- Caveat: aliasing, boundaries, phase, and rollout stability remain physical problems.
+:::
+
+## Bridge Forward
+
+FNOs and DeepONets learn operators between function representations.
+
+. . .
+
+Next question:
+
+$$
+\text{Can we learn dynamics in a state space where evolution is simpler?}
+$$
+
+. . .
+
+That leads to deep state-space models and Koopman-style views:
+
+$$
+\text{nonlinear observations}
+\quad\longleftrightarrow\quad
+\text{latent dynamics}.
+$$
+
+## Resources
+
+- Parker et al. (2022), Physical Modeling Using Recurrent Neural Networks with Fast Convolutional Layers: <https://research.aalto.fi/en/publications/physical-modeling-using-recurrent-neural-networks-with-fast-convo>
+- Li et al. (2020), Fourier Neural Operator for Parametric Partial Differential Equations: <https://arxiv.org/abs/2010.08895>
+- Kovachki et al. (2021), Neural Operator: Learning Maps Between Function Spaces: <https://arxiv.org/abs/2108.08481>
+- Lu et al. (2021), Learning nonlinear operators via DeepONet: <https://doi.org/10.1038/s42256-021-00302-5>
+- Bartolucci et al. (2023), Representation Equivalent Neural Operators: <https://proceedings.neurips.cc/paper_files/paper/2023/hash/dc35c593e61f6df62db541b976d09dcf-Abstract-Conference.html>
+- Li et al. (2020), Multipole Graph Neural Operator: <https://arxiv.org/abs/2006.09535>
+- Guibas et al. (2021), Adaptive Fourier Neural Operators: <https://arxiv.org/abs/2111.13587>
+- Tripura and Chakraborty (2022), Wavelet Neural Operator: <https://arxiv.org/abs/2205.02191>
+- Cao, Goswami, Karniadakis (2023), Laplace Neural Operator: <https://arxiv.org/abs/2303.10528>
+- Raonic et al. (2023), Convolutional Neural Operators: <https://arxiv.org/abs/2302.01178>

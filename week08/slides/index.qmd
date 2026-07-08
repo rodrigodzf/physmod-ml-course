@@ -691,12 +691,12 @@ $$
 
 ::: {.column width="55%"}
 
-![](images/posterior_multimodal.svg){width=100% fig-align="center"}
+![](images/posterior_multimodal.svg){width=92% fig-align="center"}
 
 :::
 ::::
 
-. . .
+## What The Posterior Can Show
 
 For a modal sound, that region may be:
 
@@ -1115,7 +1115,7 @@ f_\phi(z;c_y),
 \qquad
 \theta
 =
-\operatorname{constrain}(\theta_{\mathrm{uncon.}}).
+\operatorname{constrain}(\theta_{\mathrm{uncon}}).
 $$
 
 . . .
@@ -1142,34 +1142,6 @@ This is useful because:
 - amplitude trades against modal gain scale
 - the joint posterior can show parameter correlation
 :::
-
-## What To Inspect
-
-The notebook plots:
-
-::: {.incremental}
-- training and test negative log likelihood
-- posterior histogram for pluck position
-- joint samples of position and amplitude
-- posterior predictive modal gains
-- audio implied by posterior samples
-:::
-
-. . .
-
-The important question is not:
-
-$$
-\text{Did it find one exact pluck position?}
-$$
-
-. . .
-
-It is:
-
-$$
-\text{Did it identify the plausible region?}
-$$
 
 ## Modal Feature Caveat
 
@@ -1305,22 +1277,6 @@ Real recordings may include:
 . . .
 
 The posterior is only over the parameters of the model we chose.
-
-## Practical Reporting
-
-For projects, report more than one curve.
-
-::: {.incremental}
-- audio reconstruction error
-- parameter error if synthetic truth is known
-- posterior samples or confidence intervals
-- sensitivity to initialisation or prior range
-- failure cases and ambiguous examples
-:::
-
-. . .
-
-Do not let a good spectrogram hide a bad explanation.
 
 ## When To Use Which
 

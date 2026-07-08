@@ -5,6 +5,7 @@ description = "Slides and notebooks for the Differentiable Physical Modelling an
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "equinox>=0.13.8",
     "ipykernel>=7.2.0",
     "jaxdiffmodal",
     "jupyter>=1.1.1",

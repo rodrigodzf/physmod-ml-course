@@ -1,8 +1,8 @@
 ---
-title: "Parameter Estimation and Uncertainty"
-subtitle: "Differentiable Physical Modelling and Machine Learning for Sound Synthesis"
-author: "Rodrigo Diaz"
-date: "2026-07-09"
+title: 'Deep State-Space Models and Koopman Theory'
+subtitle: 'Differentiable Physical Modelling and Machine Learning for Sound Synthesis'
+author: 'Rodrigo Diaz'
+date: '2026-07-02'
 execute-dir: file
 execute:
   cache: false
@@ -17,1328 +17,629 @@ format:
     code-fold: false
     code-overflow: wrap
     highlight-style: github
-    footer: "Week 8 -- Parameter Estimation and Uncertainty"
+    footer: 'Week 8 -- Deep State-Space Models and Koopman Theory'
     transition: fade
     math: mathjax
     auto-play-media: false
 ---
 
+<style>
+.reveal .slide .light-figure {
+  background: #fff;
+  border-radius: 6px;
+  box-sizing: border-box;
+  margin: 0.4rem auto 0.9rem;
+  padding: 0.75rem 0.9rem;
+  width: min(92%, 900px);
+}
+
+.reveal .slide .light-figure p {
+  margin: 0;
+}
+
+.reveal .slide .light-figure img {
+  display: block;
+  height: auto !important;
+  margin: 0 auto;
+  max-height: 46vh;
+  max-width: 100%;
+  object-fit: contain;
+}
+
+.reveal .slide.compact-table h2 {
+  margin-bottom: 0.35em;
+}
+
+.reveal .slide.compact-table table {
+  font-size: 0.72em;
+  line-height: 1.28;
+  margin-left: auto;
+  margin-right: auto;
+  width: 96%;
+}
+
+.reveal .slide.compact-table th,
+.reveal .slide.compact-table td {
+  padding: 0.34em 0.55em;
+  vertical-align: top;
+}
+</style>
+
 ## Overview
 
 ::: {.incremental}
-- From differentiable synthesis to inverse modelling
-- Point estimates, likelihoods, and audio losses
-- Modal parameters, physical parameters, and excitation parameters
-- Why inverse problems are often ambiguous
-- Distribution estimation with conditional discrete normalizing flows
-- Notebook: infer pluck position from modal gains
+- Recap: state-space models as the common language of the course
+- From learned solution maps to learned time evolution
+- Koopman view: nonlinear dynamics through linear evolution of observables
+- Deep Koopman networks: autoencoders with linear latent dynamics
+- Deep state-space models: learnable SSM layers for long audio sequences
+- Stability, energy behaviour, and long sound-producing rollouts
+- Bridge to parameter estimation and final projects
 :::
 
-::: {.notes}
-The emphasis is parameter estimation: what can be inferred from sound, what
-cannot, and how to report ambiguity instead of hiding it behind one fitted
-value.
-:::
 
-# From Synthesis To Estimation
 
-## The Forward Problem
+# From Operators Back To Dynamics
 
-Weeks 1--7 mostly started from a model and generated sound:
+## Week 7 Recap
+
+Neural operators learn a family-level map:
 
 $$
-\theta
-\quad\longrightarrow\quad
-g(\theta)
-\quad\longrightarrow\quad
-\hat y.
+G: \text{problem setup} \rightarrow \text{solution field}.
 $$
 
 . . .
 
-Here:
+For a short trajectory, this can be useful:
+
+$$
+a \rightarrow u(x,t).
+$$
+
+. . .
+
+But synthesis often wants a **causal recurrence**:
+
+$$
+h_n \rightarrow h_{n+1} \rightarrow h_{n+2} \rightarrow \cdots
+$$
+
+
+
+## The Week 8 Question
+
+Weeks 1--7 used several state choices:
 
 ::: {.incremental}
-- $\theta$ are physical, modal, excitation, readout, or neural parameters
-- $g$ is the implemented simulator
-- $\hat y$ is the predicted audio or observation
+- physical coordinates: displacement, velocity, pressure
+- modal coordinates: independent or coupled resonators
+- neural ODE states: learned vector fields
+- PINN coordinates: direct space-time functions
+- operator inputs and outputs: discretised functions
 :::
 
 . . .
 
-This week we keep the simulator modal and focus on the inverse problem.
-
-## The Inverse Problem
-
-This week we reverse the question:
+This week asks:
 
 $$
-y
-\quad\longrightarrow\quad
-\hat\theta.
+\text{Can we learn a state where the dynamics become simpler?}
 $$
 
-. . .
+## Latent State-Space Form
 
-Given a target sound:
-
-$$
-y \approx g(\theta),
-$$
-
-estimate the parameters that could have produced it.
-
-
-## Week 4 Loop, Revisited
-
-Week 4 introduced the differentiable fitting loop:
+A learned state-space model usually has three pieces:
 
 $$
-\theta
-\rightarrow
-\hat y
-\rightarrow
-\ell(\hat y,y)
-\rightarrow
-\nabla_\theta \ell
-\rightarrow
-\text{update}.
+x_n \xrightarrow{E_\theta} z_n \xrightarrow{F_\theta} z_{n+1} \xrightarrow{D_\theta} \hat{x}_{n+1}.
 $$
 
 . . .
 
-This week adds two questions:
+With forcing or controls:
+
+$$
+z_{n+1} = F_\theta(z_n, u_n).
+$$
+
+. . .
+
+For sound synthesis, `u_n` might be a pluck, bowing input, hammer force, breath pressure, gesture signal, or control parameter.
+
+## Why Nonlinear Evolution Is Expensive
+
+A general nonlinear transition gives a sequential computation:
+
+$$
+z_N = F_\theta(F_\theta(\cdots F_\theta(z_0,u_0) \cdots,u_{N-2}),u_{N-1}).
+$$
+
+. . .
+
+Each future state depends on the previous network output, so rollout cost grows with the number of audio samples.
+
+. . .
+
+If the latent evolution were linear,
+
+$$
+z_{n+1} = A z_n + B u_n,
+$$
+
+then many samples could be evaluated efficiently with matrix powers, convolutions, or parallel scans.
+
+## Three Ways To Learn Dynamics
 
 ::: {.incremental}
-- Which parameters are actually identifiable from this observation?
-- Should the output be one best parameter vector or a distribution?
+- **Neural ODE:** learn a nonlinear vector field on the chosen state, then step
+  it on the fixed audio time grid used for synthesis.
+
+  $$
+  \dot{x} = f_\theta(x,u,t)
+  $$
+
+- **Deep Koopman:** learn observables where the latent evolution is linear.
+
+  $$
+  z_n = E_\theta(x_n), \qquad z_{n+1} = K_\theta z_n
+  $$
+
+- **Deep SSM:** learn an efficient linear recurrence or convolution inside a
+  deep sequence model.
+
+  $$
+  z_{n+1} = A_\theta z_n + B_\theta u_n, \qquad y_n = C_\theta z_n
+  $$
 :::
 
-## What Are We Estimating?
+. . .
 
-In a modal string model, possible unknowns include:
+The contrast is where the model puts the difficult part: in the nonlinear
+evolution, in the learned coordinates, or in the input/output mixing around a
+linear sequence layer.
+
+
+
+# Koopman View
+
+## Linearizing the Nonlinear
+
+![Koopman lifts nonlinear state dynamics into an observable space where evolution can be linear. Source: Brunton et al.](figures/brunton_koopman.png){fig-alt="Koopman schematic showing nonlinear dynamics in state space and linear dynamics in observable space" width="82%"}
+
+**The Koopman idea:** instead of analyzing a system only in its native state space, lift it to a possibly high-dimensional **observable space** where the dynamics are linear.
+
+$$
+g(x_{k+1}) = (K g)(x_k)
+$$
+
+
+
+## Nonlinear Dynamics
+
+Start with a discrete nonlinear system:
+
+$$
+x_{n+1} = f(x_n).
+$$
+
+. . .
+
+The trajectory may be complicated in the original coordinates:
+
+$$
+x_n = \text{displacement, velocity, pressure, modal amplitudes, or audio features}.
+$$
+
+. . .
+
+Koopman theory changes the object of study from states to **observables** of the state.
+
+## Observables
+
+Choose functions:
+
+$$
+g_1(x), \ldots, g_K(x)
+$$
+
+and collect them as:
+
+$$
+z = g(x).
+$$
+
+. . .
+
+The Koopman idea is that nonlinear state evolution can sometimes look more linear after lifting:
+
+$$
+z_{n+1} \approx K z_n.
+$$
+
+. . .
+
+The nonlinearity moves into the representation.
+
+## Deep Koopman Networks
+
+How do we find the observable functions `g`?
+
+. . .
+
+The space of all possible observables is infinite-dimensional.
+
+. . .
+
+Deep Koopman networks use an autoencoder-like architecture:
+
+$$
+z_n = E_\theta(x_n), \qquad z_{n+1} = K_\theta z_n, \qquad \hat{x}_{n+1} = D_\theta(z_{n+1}).
+$$
+
+. . .
+
+The encoder learns observables; the latent matrix enforces simple dynamics; the decoder maps back to the physical or audio domain.
+
+## Deep Koopman Architecture
+
+![](figures/diagrams-koopman_simple.svg){fig-alt="Deep Koopman architecture with encoder, linear latent dynamics, and decoder" width="82%"}
+
+. . .
+
+Typical losses combine:
 
 ::: {.incremental}
-- **modal parameters:** $f_\mu$, $\gamma_\mu$, gains, phases
-- **physical parameters:** tension, stiffness, damping coefficients
-- **excitation parameters:** pluck position, force shape, onset, amplitude
-- **observation choices:** pickup position, gain, delay, filtering
+- reconstruction of the initial state
+- prediction of future states
+- consistency between encoded states and linear latent rollout
+:::
+
+## Training Objective
+
+For a trajectory $x_0, \ldots, x_L$ and learned observable map $\varphi$:
+
+$$
+\begin{aligned}
+\mathcal{L}_{\text{consistency}}
+&= \sum_{k=1}^{L-1}\left\|\varphi(x_k)-\Lambda^k\varphi(x_0)\right\|_2^2 \\
+\mathcal{L}_{\text{pred}}
+&= \sum_{k=1}^{L-1}\left\|x_k-\varphi^{-1}\left(\Lambda^k\varphi(x_0)\right)\right\|_2^2 \\
+\mathcal{L}_{\text{enc}}
+&= \left\|x_0-\varphi^{-1}\left(\varphi(x_0)\right)\right\|_2^2 \\
+\mathcal{L}
+&= \alpha_1\mathcal{L}_{\text{pred}} + \alpha_2\mathcal{L}_{\text{enc}} + \alpha_3\mathcal{L}_{\text{consistency}}.
+\end{aligned}
+$$
+
+
+
+## Koopman and Modal Analysis
+
+### For linear systems, such as an ideal string
+
+::: {.incremental}
+- Koopman **eigenfunctions** behave like modal coordinates.
+- Koopman **eigenvalues** represent modal frequencies and damping.
+- The readout reconstructs displacement, velocity, pressure, or audio from those modal coordinates.
+:::
+
+
+### For nonlinear systems
+
+We try to find learned resonator-like coordinates that account for coupling, amplitude-dependent frequencies and pitch glide.
+
+
+## Deep Koopman: Summary and Challenges
+
+::: {.incremental}
+- **Core idea:** an autoencoder transforms nonlinear dynamics into linear evolution in a latent space.
+- **Application:** modal-like synthesis for nonlinear systems.
+- **Strength:** fast rollouts and potentially interpretable eigenvalues/modes.
+- **Challenge:** finding useful observables can require lots of data and careful initialisation.
+- **Audio caveat:** small latent frequency or damping errors are audible over long rollouts.
+:::
+
+
+
+# Deep State Space Models
+
+## Deep State Space Models: Core Idea
+
+Start from the classic continuous-time linear time-invariant system:
+
+$$
+\begin{aligned}
+\dot{x}(t) &= A x(t) + B u(t) \\
+y(t) &= C x(t) + D u(t).
+\end{aligned}
+$$
+
+. . .
+
+A **deep state-space model** uses this form as a learnable neural network layer.
+
+. . .
+
+The matrices `A`, `B`, `C`, and sometimes `D` are no longer fixed from a hand-derived physical model; they are parameters learned from data.
+
+
+
+## Linear Is Not Diagonal
+
+The recurrence is **linear in the state** when it has the form:
+
+$$
+x_k = \bar{A}x_{k-1} + \bar{B}u_k.
+$$
+
+. . .
+
+This can be true whether $\bar{A}$ is dense, structured, block diagonal, or
+diagonal.
+
+. . .
+
+Diagonal is an extra structural restriction:
+
+$$
+\bar{A} = \operatorname{diag}(\lambda_1,\ldots,\lambda_N).
+$$
+
+. . .
+
+::: {.incremental}
+- **S4:** linear recurrence, but not a simple diagonal `A`; it used a structured state matrix and specialised kernel computation.
+- **DSS and S4D:** kept the recurrence linear and made diagonal `A` matrices work well.
+- **LRU:** used diagonal linear recurrences inside a deeper neural block.
 :::
 
 . . .
 
-Different choices give different inverse problems.
+So the layer can use a linear recurrence, the matrix can optionally be diagonal,
+and the full DSSM can still be nonlinear because of projections, gating,
+normalisation, nonlinearities, and depth.
 
-## Free Modal Parameters
 
-The most direct audio fit treats each mode separately:
+## DSSM Family Evolution {.compact-table}
+
+| Model | Main idea |
+| :--- | :--- |
+| **S4 (2021)** | Structured NPLR `A`, HiPPO memory, and fast convolution-kernel computation. |
+| **DSS (2022)** | Complex diagonal `A`; removes the low-rank term. |
+| **S4D (2022)** | Diagonal SSM with HiPPO-derived initialisation. |
+| **S5 (2022)** | MIMO SSM with a shared state matrix and parallel scan. |
+| **LRU (2023)** | Discrete diagonal linear RNN with polar parameterisation for stability. |
+
+
+## DSSM Layer
+
+::: {.light-figure}
+![](figures/diagrams-dssm.svg){fig-alt="Deep state-space model diagram showing input, state transition, and output projection" width="100%"}
+:::
+
+. . .
+
+When `A` is diagonal or block diagonal, the layer resembles a bank of learned resonators.
+
+. . .
+
+This analogy is strongest for one structured layer. Once layers are stacked with
+mixing and nonlinearities, the full model is no longer just learned modal
+synthesis.
+
+## Discretisation
+
+For sampled audio, the continuous system is converted to a discrete recurrence:
 
 $$
-y(t)
-=
-\sum_{\mu=1}^{M}
-g_\mu
-e^{-\gamma_\mu t}
-\cos(\omega_\mu t+\varphi_\mu).
+\begin{aligned}
+x_k &= \bar{A} x_{k-1} + \bar{B} u_k \\
+y_k &= \bar{C} x_k.
+\end{aligned}
 $$
 
 . . .
 
-Then:
+Here `u_k` is the input sample or feature at time `k`, `x_k` is the hidden state, and `y_k` is the output sample or feature.
+
+. . .
+
+This is a linear RNN with a very specific structure.
+
+## Recurrence View
+
+The recurrent representation is useful for **auto-regressive inference**:
 
 $$
-\theta
-=
-\{
-g_\mu,\gamma_\mu,\omega_\mu,\varphi_\mu
-\}_{\mu=1}^{M}.
+x_k = \bar{A}x_{k-1} + \bar{B}u_k.
+$$
+
+::: {.incremental}
+- consumes one sample or block at a time
+- keeps a compact hidden state
+- fits real-time streaming synthesis
+- makes control inputs natural
+:::
+
+. . .
+
+This is the deployment view: step the model forward as audio is generated.
+
+## Convolution View
+
+Because the system is linear and time-invariant, the output can also be written as a convolution with an impulse response:
+
+$$
+h_k = \bar{C}\bar{A}^{k}\bar{B}.
 $$
 
 . . .
 
-This can reconstruct a signal well, but it may not explain the instrument.
-
-## Physical Parameters
-
-A physical parameterisation ties many modes together.
-
-For a stiff string:
+Then the sequence output is:
 
 $$
-\omega_\mu^2
-=
-\tau\lambda_\mu^2
-+
-B\lambda_\mu^4.
+y = h * u.
 $$
 
 . . .
 
-where
+This makes training on long sequences efficient: apply the convolution in parallel, often using FFTs or parallel scan algorithms.
+
+
+
+## Why DSSMs Work Well For Long Audio
+
+Audio has long dependencies:
+
+::: {.incremental}
+- resonances decay over thousands of samples
+- room, body, and string responses have long memory
+- musical gestures evolve over many time scales
+- sample-level autoregressive networks can be expensive
+:::
+
+. . .
+
+A structured state-space layer stores long memory in a compact state instead of recomputing it through a generic recurrent network.
+
+## Relation To Modal Synthesis
+
+A modal resonator bank can be written as:
 
 $$
-\tau =
-\frac{T_0}{\rho A_{\mathrm{cs}}},
+z_{k+1}^{(m)} = \lambda_m z_k^{(m)} + b_m u_k,
 \qquad
-B =
-\frac{EI}{\rho A_{\mathrm{cs}}}.
+\hat{y}_k = \sum_m c_m z_k^{(m)}.
 $$
 
 . . .
 
-For damping:
-
-$$
-2\gamma_\mu
-=
-d_1
-+
-d_3\lambda_\mu^2.
-$$
-
-. . .
-
-Now:
-
-$$
-\theta
-=
-\{
-\tau, B, d_1, d_3
-\}.
-$$
-
-. . .
-
-Fewer parameters, stronger structure, harder optimisation.
-
-## Excitation Parameters
-
-For a plucked string, the initial modal displacement depends on the pluck:
-
-$$
-q_\mu^0
-\propto
-A
-\frac{L}{L-x_p}
-\frac{\sin(k_\mu x_p)}{k_\mu x_p}
-\frac{1}{k_\mu}.
-$$
-
-. . .
-
-The observed modal contribution also depends on the pickup:
-
-$$
-g_\mu
-\approx
-c_\mu(x_{\mathrm{out}})
-q_\mu^0(x_p,A).
-$$
-
-. . .
-
-So pluck position changes the whole modal-gain pattern.
-
-## A Useful But Dangerous Shortcut
-
-If the modal frequencies are known, we can summarise the observation with modal gains:
-
-$$
-y_\mu
-=
-\log
-\left(
-|c_\mu q_\mu^0|
-+
-\epsilon
-\right)
-+ \eta_\mu.
-$$
-
-. . .
-
-This is what the conditional-flow notebook uses.
-
-. . .
-
-It is useful because it isolates the excitation-position problem.
-
-. . .
-
-It is dangerous because it throws away the sign of each real modal gain.
-
-# Point Estimation
-
-## Optimisation View
-
-The simplest estimator returns one parameter vector:
-
-$$
-\hat\theta
-=
-\arg\min_\theta
-J(\theta),
-\qquad
-J(\theta)
-=
-\ell(g(\theta),y).
-$$
-
-. . .
-
-This is a **point estimate**.
-
-. . .
-
-It answers:
-
-$$
-\text{Which single parameter vector minimises my chosen objective?}
-$$
-
-## Maximum Likelihood View
-
-Here $y=(y_1,\ldots,y_T)$ is one observed signal trajectory.
-
-The index $t$ denotes a waveform sample.
-
-. . .
-
-Assume each sample is generated by:
-
-$$
-y_t
-=
-g_t(\theta)
-+
-\epsilon_t,
-\qquad
-\epsilon_t
-\sim
-\mathcal N(0,\sigma^2)
-\quad
-\text{independently over }t.
-$$
-
-. . .
-
-Then the likelihood of the whole trajectory is:
-
-$$
-p(y\mid\theta)
-=
-\prod_{t=1}^{T}
-p(y_t\mid\theta)
-\propto
-\exp
-\left(
--
-\frac{1}{2\sigma^2}
-\|y-g(\theta)\|_2^2
-\right).
-$$
-
-. . .
-
-Maximising likelihood is equivalent to minimising waveform MSE.
-
-## Audio Losses Are Not Automatically Likelihoods
-
-Waveform MSE has a simple likelihood story.
-
-. . .
-
-Other losses may be better for sound:
+A DSSM generalizes this idea:
 
 ::: {.incremental}
-- magnitude STFT loss
-- log-magnitude STFT loss
-- multi-resolution STFT loss
-- spectral optimal transport
-- scattering-style losses
+- many learned modes or state channels
+- learned input and output projections
+- stable parameterisations for long memory
+- nonlinear mixing between structured linear layers
 :::
 
 . . .
 
-But they are not automatically the log likelihood of an obvious noise model.
+For sound, this suggests a path from hand-designed resonators to trainable resonator-like sequence models.
 
-. . .
+## DSSMs In Neural Architectures
 
-They are objectives, not neutral measurements of truth.
-
-## MAP Estimation
-
-If we add prior knowledge:
-
-$$
-p(\theta),
-$$
-
-we can estimate:
-
-$$
-\hat\theta_{\mathrm{MAP}}
-=
-\arg\max_\theta
-p(\theta\mid y).
-$$
-
-. . .
-
-Using Bayes:
-
-$$
-p(\theta\mid y)
-\propto
-p(y\mid\theta)
-p(\theta).
-$$
-
-. . .
-
-Equivalently:
-
-$$
-\hat\theta_{\mathrm{MAP}}
-=
-\arg\min_\theta
-\left[
--\log p(y\mid\theta)
--\log p(\theta)
-\right].
-$$
-
-## Priors As Physical Constraints
-
-Priors can encode basic physical knowledge:
+A practical DSSM block is usually more than one linear recurrence.
 
 ::: {.incremental}
-- tension and stiffness are positive
-- damping should not create energy
-- pluck position lies inside the string
-- gain should stay in a plausible range
-- implausible parameter ranges should be penalised
+- input projection or embedding
+- state-space kernel or recurrent update
+- gating or pointwise nonlinearity
+- output projection
+- residual connection and normalisation
 :::
 
 . . .
 
-In implementation, we often optimise unconstrained variables:
+The SSM provides long memory; the surrounding neural layers provide expressivity.
 
-$$
-\theta_{\mathrm{uncon}} \in \mathbb R^d
-$$
-
-and map them to physical values:
-
-$$
-\theta
-=
-\operatorname{constrain}(\theta_{\mathrm{uncon}}).
-$$
-
-## Point Estimation Workflow
+## Deep State Space Models: Summary and Challenges
 
 ::: {.incremental}
-1. Choose which parameters are unknown.
-2. Choose a parameterisation that keeps them physical.
-3. Choose the observation and loss.
-4. Initialise from signal knowledge when possible.
-5. Optimise.
-6. Check audio, spectra, parameters, and residuals separately.
+- Learn long-memory sequence layers with recurrence and convolution views.
+- Efficient for long sequences, and streamable at inference time.
+- Practical caveats: parameterisation, stability, and real-time deployment cost.
 :::
 
-. . .
 
-The scalar loss is not enough.
 
-## What A Good Fit Does Not Prove
+# Audio Modelling Concerns
 
-A low loss can mean:
+## Why This Matters For Sound
+
+Audio synthesis is unforgiving because rollout errors are heard over many thousands of steps.
 
 ::: {.incremental}
-- the true parameters were recovered
-- the wrong parameters sound similar
-- gain, delay, or alignment absorbed model error
-- the loss ignored a perceptually or physically important mismatch
-- the model family is wrong, but flexible enough to compensate
+- small phase errors become beating and detuning
+- small energy errors become exploding or dying resonances
+- unstable latent dynamics can produce unusable audio
+- poor input handling breaks playability and control
+- black-box latent states can be hard to edit musically
 :::
 
-. . .
+## Useful Structure
 
-$$
-g(\hat\theta) \approx y
-\quad\not\Rightarrow\quad
-\hat\theta = \theta_{\mathrm{true}}.
-$$
-
-# Identifiability
-
-## Identifiability Question
-
-The central inverse-problem question:
-
-$$
-g(\theta_1)
-\approx
-g(\theta_2)
-\quad
-\Rightarrow
-\quad
-\theta_1
-\approx
-\theta_2
-?
-$$
-
-. . .
-
-If not, the parameters are not identifiable from this observation.
-
-. . .
-
-The problem may still be useful for synthesis.
-
-. . .
-
-It is just not a reliable measurement of the underlying physics.
-
-## Parameter Symmetries
-
-A parameter symmetry is a transformation that leaves the observation unchanged:
-
-$$
-S:\theta \mapsto S(\theta),
-\qquad
-g(S(\theta)) = g(\theta).
-$$
-
-. . .
-
-Then $\theta$ and $S(\theta)$ cannot be distinguished from this observation.
-
-. . .
-
-With noise, finite clips, or compressed features, we often get approximate symmetries:
-
-$$
-g(S(\theta)) \approx g(\theta).
-$$
-
-. . .
-
-Symmetry is one source of non-identifiability, but missing information can also make parameters unidentifiable.
-
-## Physical Parameter Symmetry
-
-Symmetries can appear before we even model the excitation.
-
-. . .
-
-For a simply-supported rectangular plate:
-
-$$
-\omega_{m,n}^2
-=
-\frac{D}{\rho h}
-\left[
-\pi^2
-\left(
-\frac{m^2}{L_x^2}
-+
-\frac{n^2}{L_y^2}
-\right)
-\right]^2.
-$$
-
-. . .
-
-Swapping the side lengths and modal indices leaves the frequency set unchanged:
-
-$$
-(L_x,L_y,m,n)
-\mapsto
-(L_y,L_x,n,m).
-$$
-
-. . .
-
-So from an unordered modal spectrum alone, width and length may be exchangeable.
-
-. . .
-
-Measurements tied to known plate coordinates can break this symmetry, for example
-an excitation or pickup at a known $(x,y)$ location.
-
-## Modal Sources Of Ambiguity
+Deep latent dynamics become more useful when the transition is constrained:
 
 ::: {.incremental}
-- A pluck near a modal node weakly excites that mode.
-- Pickup position can hide modes that were physically present.
-- Overall gain trades against excitation amplitude.
-- Short clips make slow decay rates hard to estimate.
-- Noisy high modes blur stiffness and damping effects.
-- Phase, delay, and onset errors can dominate waveform loss.
+- diagonal or block-diagonal transitions for modal structure
+- stable eigenvalues for bounded rollouts
+- input matrices for controllable excitation
+- residual nonlinear terms for weak coupling
+- energy or passivity losses for physical behaviour
+- decoder constraints for interpretable outputs
 :::
 
-## Example: Missing Harmonics
-
-The pluck controls modal amplitudes:
-
-$$
-q_\mu^0(x_p,A).
-$$
-
-. . .
-
-The readout controls what we observe:
-
-$$
-c_\mu(x_{\mathrm{out}}).
-$$
-
-. . .
-
-If either term is near zero:
-
-$$
-|c_\mu q_\mu^0| \approx 0,
-$$
-
-that mode carries little information about the parameters.
-
-## Example: Left/Right Symmetry
-
-For an ideal string, sine modes have spatial symmetry:
-
-$$
-\sin
-\left(
-\mu\pi
-\frac{L-x}{L}
-\right)
-=
-(-1)^{\mu+1}
-\sin
-\left(
-\mu\pi
-\frac{x}{L}
-\right).
-$$
-
-. . .
-
-If we observe only magnitudes:
-
-$$
-|g_\mu|,
-$$
-
-some left/right information can be weakened or lost.
-
-. . .
-
-The posterior may have more than one plausible region.
-
-## One Number Cannot Show This
-
-A point estimator must choose one:
-
-$$
-\hat x_p.
-$$
-
-. . .
-
-But the evidence may support several explanations:
-
-$$
-x_p
-\in
-\{0.2L, 0.8L\}
-\quad
-\text{or}
-\quad
-x_p \in [0.18L,0.28L].
-$$
-
-. . .
-
-This motivates distribution estimation.
-
-# Distribution Estimation
-
-## Posterior Distribution
-
-:::: {.columns}
-::: {.column width="45%"}
-
-Instead of one best value, estimate:
-
-$$
-p(\theta\mid y).
-$$
-
-. . .
-
-This answers:
-
-$$
-\text{Which regions of parameter space plausibly explain the sound?}
-$$
-
-:::
-
-::: {.column width="55%"}
-
-![](images/posterior_multimodal.svg){width=92% fig-align="center"}
-
-:::
-::::
-
-## What The Posterior Can Show
-
-For a modal sound, that region may be:
-
-::: {.incremental}
-- narrow for well-observed modal frequencies
-- broad for poorly observed damping
-- multimodal for ambiguous excitation positions
-- correlated between excitation position and amplitude
-:::
-
-## Gaussian Estimator
-
-A neural estimator can output mean and variance:
-
-$$
-\mathrm{NN}_\phi(y)
-\longrightarrow
-\mu_\phi(y),
-\sigma_\phi(y).
-$$
-
-. . .
-
-Then:
-
-$$
-q_\phi(\theta\mid y)
-=
-\mathcal N
-\left(
-\mu_\phi(y),
-\operatorname{diag}(\sigma_\phi^2(y))
-\right).
-$$
-
-. . .
-
-This is simple and useful.
-
-. . .
-
-But it struggles with multimodal or curved posteriors.
-
-## Why A Gaussian Can Mislead
-
-Suppose both positions are plausible:
-
-$$
-x_p \approx 0.2L
-\qquad
-\text{or}
-\qquad
-x_p \approx 0.8L.
-$$
-
-. . .
-
-A single Gaussian may report:
-
-$$
-\mu \approx 0.5L.
-$$
-
-. . .
-
-But $0.5L$ may not be a plausible pluck position for the target.
-
-. . .
-
-The mean can be physically misleading.
-
-## Conditional Normalizing Flow
-
-A conditional flow represents:
-
-$$
-q_\phi(\theta\mid y)
-$$
-
-with an invertible transformation.
-
-. . .
-
-Sample:
-
-$$
-z
-\sim
-\mathcal N(0,I),
-\qquad
-\theta_{\mathrm{uncon}}
-=
-f_\phi(z;c_y),
-\qquad
-\theta
-=
-\operatorname{constrain}(\theta_{\mathrm{uncon}}).
-$$
-
-. . .
-
-Here $f_\phi$ is the learned invertible flow map.
-
-. . .
-
-The variable $\theta_{\mathrm{uncon}}$ is the unconstrained coordinate version
-of the physical parameter vector $\theta$.
-
-. . .
-
-The final $\operatorname{constrain}$ step maps unconstrained coordinates into
-physical parameter ranges; it is not the string tension.
-
-. . .
-
-Here $c_y$ is the conditioning vector computed from the observation:
-
-$$
-c_y
-=
-\mathrm{encoder}_\phi(y).
-$$
-
-## Conditional, Not Continuous
-
-The flow in the notebook is:
-
-::: {.incremental}
-- **conditional:** depends on the observed modal features
-- **discrete:** finite stack of affine coupling layers
-- **not a CNF:** no ODE defines the transformation
-:::
-
-. . .
-
-So the intended phrase is:
-
-$$
-\text{conditional discrete normalizing flow}.
-$$
-
-## Affine Coupling Layer
-
-Split the latent vector with a mask:
-
-$$
-u
-=
-(u_a,u_b).
-$$
-
-. . .
-
-One coupling layer updates:
-
-$$
-u_b'
-=
-u_b
-\odot
-\exp
-s_\phi(u_a,c_y)
-+
-t_\phi(u_a,c_y),
-$$
-
-and leaves $u_a$ unchanged.
-
-. . .
-
-The inverse is cheap:
-
-$$
-u_b
-=
-\left(
-u_b' - t_\phi(u_a,c_y)
-\right)
-\odot
-\exp[-s_\phi(u_a,c_y)].
-$$
-
-## Likelihood Training
-
-Because the transform is invertible:
-
-$$
-\log q_\phi(\theta_{\mathrm{uncon}}\mid y)
-=
-\log p(z)
-+
-\log
-\left|
-\det
-\frac{\partial z}{\partial \theta_{\mathrm{uncon}}}
-\right|,
-\qquad
-z=f_\phi^{-1}(\theta_{\mathrm{uncon}};c_y).
-$$
-
-. . .
-
-The inverse map and log-Jacobian are differentiable, so gradients propagate
-through the density model.
-
-. . .
-
-This does not require the physical simulator itself to be invertible.
-
-. . .
-
-With synthetic data, we know the true parameter:
-
-$$
-(\theta_i,y_i).
-$$
-
-. . .
-
-Train by:
-
-$$
-\min_\phi
--
-\frac{1}{N}
-\sum_i
-\log q_\phi
-\left(
-\theta_{\mathrm{uncon},i}
-\mid
-y_i
-\right).
-$$
-
-## Synthetic Training Loop
-
-::: {style="font-size: 0.7em;"}
-
-```python
-theta = sample_from_prior(key)
-features = modal_features(theta) + noise
-theta_uncon = unconstrain(theta)
-
-loss = -flow.log_prob(theta_uncon, features)
-```
-
-:::
-
-. . .
-
-This is supervised simulation-based inference.
-
-. . .
-
-We can train because the simulator generates both:
-
-$$
-\theta_i
-\quad
-\text{and}
-\quad
-y_i.
-$$
-
-## Analysis-By-Synthesis Refinement
-
-For a real target recording, the true $\theta$ is unknown.
-
-. . .
-
-One possible refinement is:
-
-$$
-\theta_k
-\sim
-q_\phi(\theta\mid y),
-\qquad
-\hat y_k
-=
-g(\theta_k),
-$$
-
-then penalise:
-
-$$
-\frac{1}{K}
-\sum_k
-\ell(\hat y_k,y).
-$$
-
-. . .
-
-This can improve the sound match.
-
-. . .
-
-But by itself it does not guarantee calibrated uncertainty.
-
-## Posterior Predictive Check
-
-After estimating a distribution:
-
-$$
-\theta_k
-\sim
-q_\phi(\theta\mid y),
-$$
-
-simulate:
-
-$$
-\hat y_k
-=
-g(\theta_k).
-$$
-
-. . .
-
-Then inspect:
-
-::: {.incremental}
-- Do sampled parameters reproduce the observed features?
-- Do sampled sounds cover the target sound?
-- Are the high-probability parameters physically plausible?
-- Does the distribution collapse to one point or expose ambiguity?
-:::
-
-# Notebook Example
-
-## Companion Notebook
-
-The runnable Week 8 example is:
-
-::: {style="font-size: 0.72em;"}
-
-```sh
-uv run python week08/notebooks/conditional_flow_excitation_position.py
-```
-
-:::
-
-. . .
-
-It trains:
-
-$$
-q_\phi
-\left(
-x_{\mathrm{pluck}},
-A_{\mathrm{pluck}}
-\mid
-\text{modal gains}
-\right).
-$$
-
-## What The Notebook Observes
-
-For each synthetic pluck:
-
-$$
-\theta
-=
-\begin{bmatrix}
-x_{\mathrm{pluck}}\\
-A_{\mathrm{pluck}}
-\end{bmatrix}.
-$$
-
-. . .
-
-The observation is:
-
-$$
-y_\mu
-=
-\log
-\left(
-|c_\mu q_\mu^0|
-+
-\epsilon
-\right)
-+
-\eta_\mu.
-$$
-
-. . .
-
-These are **observed modal gains** after pickup weighting.
-
-## What The Flow Learns
-
-The encoder compresses the observed modal features into a conditioning vector:
-
-$$
-c_y
-=
-E_\phi(y).
-$$
-
-. . .
-
-This vector tells each coupling layer which sound it is explaining.
-
-. . .
-
-The flow maps Gaussian noise to plausible parameters:
-
-$$
-z
-\sim
-\mathcal N(0,I),
-\qquad
-\theta_{\mathrm{uncon}}
-=
-f_\phi(z;c_y),
-\qquad
-\theta
-=
-\operatorname{constrain}(\theta_{\mathrm{uncon}}).
-$$
-
-. . .
-
-Many samples give an estimated posterior cloud.
-
-## Why Estimate Amplitude Too?
-
-The target parameter vector is two-dimensional:
-
-$$
-\theta
-=
-(x_{\mathrm{pluck}}, A_{\mathrm{pluck}}).
-$$
-
-. . .
-
-This is useful because:
-
-::: {.incremental}
-- affine coupling flows need variables to condition on each other
-- amplitude is a realistic unknown excitation parameter
-- amplitude trades against modal gain scale
-- the joint posterior can show parameter correlation
-:::
-
-## Modal Feature Caveat
-
-The notebook does not feed raw waveform audio to the flow.
-
-. . .
-
-It uses idealised modal features:
-
-$$
-\log |c_\mu q_\mu^0|.
-$$
-
-. . .
-
-For recorded audio, these would need to be estimated from:
-
-::: {.incremental}
-- spectral peaks near modal frequencies
-- fitted modal gains
-- STFT or learned audio features
-- a differentiable analysis front end
-:::
-
-. . .
-
-The flow idea stays the same.
-
-## Raw Audio Version
-
-A raw-audio version would use:
-
-$$
-c_y
-=
-E_\phi(y_{1:T}),
-$$
-
-where $E_\phi$ could be:
-
-::: {.incremental}
-- a small convolutional encoder
-- an STFT-feature MLP
-- a modal-analysis front end
-- a pretrained audio representation
-:::
-
-. . .
-
-Then the same conditional flow estimates:
-
-$$
-q_\phi(\theta\mid y_{1:T}).
-$$
-
-## What Makes This Different From Regression?
-
-Regression predicts:
-
-$$
-\hat\theta
-=
-R_\phi(y).
-$$
-
-. . .
-
-The flow predicts a distribution:
-
-$$
-q_\phi(\theta\mid y).
-$$
-
-. . .
-
-So the output can be:
-
-::: {.incremental}
-- narrow when the sound is informative
-- broad when the sound is ambiguous
-- correlated across parameters
-- multi-region if the flow and training data support it
-:::
-
-# Practical Caveats
-
-## Calibration Is Not Automatic
-
-A flow can output uncertainty.
-
-. . .
-
-That uncertainty is meaningful only if the training setup is meaningful.
-
-::: {.incremental}
-- The simulator must cover the real target.
-- The prior must cover plausible parameters.
-- The noise model must be realistic enough.
-- The features must retain the relevant information.
-- The test distribution should match the training distribution.
-:::
-
-. . .
-
-Otherwise the model can be confidently wrong.
-
-## Synthetic-To-Real Gap
-
-Training on synthetic data gives labels for free:
-
-$$
-\theta_i
-\sim
-p(\theta),
-\qquad
-y_i
-=
-g(\theta_i)+\eta_i.
-$$
-
-. . .
-
-Real recordings may include:
-
-::: {.incremental}
-- body radiation and microphone colouration
-- imperfect boundary conditions
-- unmodelled damping
-- nonlinear excitation
-- noise, room response, and editing
-:::
-
-. . .
-
-The posterior is only over the parameters of the model we chose.
-
-## When To Use Which
-
-:::: {.columns}
-
-::: {.column width="50%"}
-### Point Estimate
-
-::: {.incremental}
-- fast baseline
-- simple to explain
-- useful for fitting a known target
-- good when posterior is narrow
-:::
-:::
-
-::: {.column width="50%"}
-### Distribution
-
-::: {.incremental}
-- exposes ambiguity
-- supports uncertainty reporting
-- useful for inverse design
-- safer when observations are partial
-:::
-:::
-
-::::
+## Koopman vs DSSM
+
+| Question | Deep Koopman | Deep State Space Model |
+| :--- | :--- | :--- |
+| What is learned? | observable coordinates plus linear latent dynamics | sequence layer parameters and projections |
+| Where is the linearity? | in the lifted latent space | inside each SSM layer |
+| Typical use | learn modal-like coordinates for a dynamical system | model long sequences efficiently |
+| Audio intuition | nonlinear modal analysis | trainable resonator/filter bank with deep mixing |
+| Main risk | poor observables or unstable eigenvalues | initialisation, parameter count, deployment cost |
+
+## Course Connection
+
+The model can be read as a learned version of earlier ingredients:
+
+| Earlier course idea | Week 8 version |
+| :--- | :--- |
+| modal basis $\phi_m$ | learned encoder or input projection |
+| modal recursion | latent transition $F_\theta$, $K_\theta$, or $\bar{A}$ |
+| readout matrix $C$ | decoder or output projection |
+| nonlinear coupling | latent residual, gating, or stacked layers |
+| differentiable fitting | end-to-end training through rollout or convolution |
 
 ## Week 8 Takeaway
 
-Parameter estimation is not just optimisation.
-
-. . .
-
-It is the combination of:
+Deep state-space models learn:
 
 $$
-\text{model}
-+
-\text{observation}
-+
-\text{loss / likelihood}
-+
-\text{prior}
-+
-\text{diagnostics}.
+\text{representation} + \text{latent dynamics} + \text{readout}.
 $$
 
 . . .
 
-::: {.incremental}
-- Point estimates answer "which one?"
-- Posteriors answer "which regions?"
-- Modal structure helps, but does not remove ambiguity.
-- A conditional flow is a practical way to learn parameter distributions from simulated data.
-:::
+Koopman-style models add a strong bias:
+
+$$
+\text{nonlinear observations} \rightarrow \text{approximately linear latent evolution}.
+$$
+
+. . .
+
+DSSMs add a complementary bias:
+
+$$
+\text{structured recurrence} \leftrightarrow \text{efficient convolution}.
+$$
+
+. . .
+
+For physical modelling, the key question is not only whether the model predicts the next frame. It is whether it remains stable, controllable, and meaningful over long sound-producing rollouts.
 
 ## Resources
 
-- ISMIR 2025 tutorial, *Differentiable Physical Modeling Sound Synthesis*: <https://ismir-physical-modeling.github.io/>
-- Dinh, Sohl-Dickstein, Bengio (2017), RealNVP: <https://arxiv.org/abs/1605.08803>
-- Papamakarios, Pavlakou, Murray (2017), Masked Autoregressive Flow: <https://arxiv.org/abs/1705.07057>
-- Durkan et al. (2019), Neural Spline Flows: <https://arxiv.org/abs/1906.04032>
-- Cranmer, Brehmer, Louppe (2020), Simulation-Based Inference: <https://doi.org/10.1073/pnas.1912789117>
+- Brunton et al. (2016), Koopman invariant subspaces and finite linear representations of nonlinear dynamical systems for control: <https://doi.org/10.1371/journal.pone.0150171>
+- Brunton, Budišić, Kaiser, and Kutz (2022), Modern Koopman theory for dynamical systems: <https://doi.org/10.1137/21M1401243>
+- Lusch, Kutz, and Brunton (2018), Deep learning for universal linear embeddings of nonlinear dynamics: <https://doi.org/10.1038/s41467-018-07210-0>
+- Gu et al. (2022), Efficiently Modeling Long Sequences with Structured State Spaces: <https://arxiv.org/abs/2111.00396>
+- Gupta, Gu, and Berant (2022), Diagonal State Spaces are as Effective as Structured State Spaces: <https://arxiv.org/abs/2203.14343>
+- Gu, Gupta, Goel, and Ré (2022), On the Parameterization and Initialization of Diagonal State Space Models: <https://arxiv.org/abs/2206.11893>
+- Goel et al. (2022), It's Raw! Audio Generation with State-Space Models: <https://proceedings.mlr.press/v162/goel22a.html>
+- Orvieto et al. (2023), Resurrecting Recurrent Neural Networks for Long Sequences: <https://proceedings.mlr.press/v202/orvieto23a.html>
+- Smith et al. (2023), Simplified State Space Layers for Sequence Modeling: <https://arxiv.org/abs/2208.04933>
+- De La Vega Martin, Diaz, and Sandler (2025), Evaluation of Neural Surrogates for Physical Modelling Synthesis of Nonlinear Elastic Plates, ICML25 ML for Audio workshop

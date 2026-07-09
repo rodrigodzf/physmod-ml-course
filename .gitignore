@@ -3,3 +3,4 @@ animations/
 /.quarto/
 **/*.quarto_ipynb
 media
+week*/slides/*.html

@@ -1,7 +1,7 @@
 # %% [markdown]
 # # Conditional Normalizing Flow for Modal Parameter Estimation
 #
-# This notebook-script is a Week 8 companion example for distributional
+# This notebook-script is a Week 9 companion example for distributional
 # parameter estimation.
 #
 # We generate synthetic modal observations from a plucked string and train a

@@ -205,7 +205,7 @@ linear sequence layer.
 
 ## Linearizing the Nonlinear
 
-![Koopman lifts nonlinear state dynamics into an observable space where evolution can be linear. Source: Brunton et al.](figures/brunton_koopman.png){fig-alt="Koopman schematic showing nonlinear dynamics in state space and linear dynamics in observable space" width="82%"}
+![Koopman lifts nonlinear state dynamics into an observable space where evolution can be linear. Source: Brunton et al.](images/brunton_koopman.png){fig-alt="Koopman schematic showing nonlinear dynamics in state space and linear dynamics in observable space" width="82%"}
 
 **The Koopman idea:** instead of analyzing a system only in its native state space, lift it to a possibly high-dimensional **observable space** where the dynamics are linear.
 
@@ -283,7 +283,7 @@ The encoder learns observables; the latent matrix enforces simple dynamics; the 
 
 ## Deep Koopman Architecture
 
-![](figures/diagrams-koopman_simple.svg){fig-alt="Deep Koopman architecture with encoder, linear latent dynamics, and decoder" width="82%"}
+![](images/diagrams-koopman_simple.svg){fig-alt="Deep Koopman architecture with encoder, linear latent dynamics, and decoder" width="82%"}
 
 . . .
 
@@ -415,7 +415,7 @@ normalisation, nonlinearities, and depth.
 ## DSSM Layer
 
 ::: {.light-figure}
-![](figures/diagrams-dssm.svg){fig-alt="Deep state-space model diagram showing input, state transition, and output projection" width="100%"}
+![](images/diagrams-dssm.svg){fig-alt="Deep state-space model diagram showing input, state transition, and output projection" width="100%"}
 :::
 
 . . .

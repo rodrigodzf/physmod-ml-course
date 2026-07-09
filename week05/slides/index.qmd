@@ -727,7 +727,7 @@ $$
 
 ::: {.column width="58%"}
 
-![](figures/hairer.png){width="112%" fig-align="center"}
+![](images/hairer.png){width="112%" fig-align="center"}
 
 ::: {style="font-size: 0.55em;"}
 Source: Hairer et al., *Geometric numerical integration illustrated by the Störmer-Verlet method*.

@@ -2,7 +2,7 @@
 title: "Introduction to Physical Modelling for Sound Synthesis"
 subtitle: "Differentiable Physical Modelling and Machine Learning for Sound Synthesis"
 author: "Rodrigo Diaz"
-date: "2026-05-07"
+date: "2026-10-15"
 execute-dir: file
 execute:
   cache: false
@@ -54,35 +54,52 @@ Welcome to the course. This first session sets the scene for the entire course b
 
 ## Logistics
 
-- **Room:** H 3001
-- **Time:** 14--16, weekly from 7 May 2026
+- **Semester:** WiSe 2026/2027, Seminar (SE)
+- **Room:** [FH 313, Fraunhoferstraße 33–36](https://www.tu.berlin/en/studienberatung/advising-information/studying-with-impairments/accessibility/fh-fraunhoferstrasse-gebaeude)
+- **Time:** Thursdays, 14:00–16:00, 15 October 2026 to 11 February 2027
+- **Christmas break:** No sessions on 24 or 31 December; resume 7 January
 - **Credits:** 3 ECTS
 - **Tools:** Python, JAX, PyTorch
+- **Contact:** [diaz.fernandez@campus.tu-berlin.de](mailto:diaz.fernandez@campus.tu-berlin.de)
 
-. . .
+## Important Dates
 
-**Important dates:**
+*Application and project deadlines are provisional. All times are local Berlin time.*
 
-- Course application deadline: 18.05.2026
-- Project proposal deadline: 07.06.2026
-- Project pitch: 25.06.2026
-- Final presentation: 09.07.2026
-- Code + paper submission: 30.09.2026
+- Course application deadline: 25.10.2026, 23:59
+- Project proposal deadline: 15.11.2026, 23:59
+- Project pitch: 17.12.2026
+- Final presentation: 11.02.2027
+- Code + paper submission: 31.03.2027, 23:59
+- MOSES registration deadline: to be announced
 
 ## Course Roadmap
 
-| Week | Topic |
-|------|-------|
-| **1** | **Introduction to Physical Modelling** (today) |
-| 2 | Modal and Finite-Difference Methods |
-| 3 | Nonlinear Systems and Coupled Models |
-| 4 | Differentiable Programming for Audio |
-| 5 | Neural ODEs |
-| 6 | Physics-Informed Neural Networks |
-| 7 | Neural Operators (FNO) |
-| 8 | Deep State-Space Models and Koopman Theory |
-| 9 | Differentiable Physical Modelling for Parameter Estimation |
-| 10 | Project Presentations |
+| Session | Date | Topic |
+|---------|------------|-------|
+| **1** | **15.10.2026** | **Introduction to Physical Modelling** (today) |
+| 2 | 22.10.2026 | Modal and Finite-Difference Methods |
+| 3 | 29.10.2026 | Nonlinear Systems and Coupled Models |
+| 4 | 05.11.2026 | Differentiable Programming for Audio |
+| 5 | 12.11.2026 | Neural ODEs |
+| 6 | 19.11.2026 | Physics-Informed Neural Networks |
+| 7 | 26.11.2026 | Neural Operators (FNO) |
+| 8 | 03.12.2026 | Deep State-Space Models and Koopman Theory |
+| 9 | 10.12.2026 | Differentiable Physical Modelling for Parameter Estimation |
+
+: {.striped}
+
+## Project Schedule
+
+| Session | Date | Topic |
+|---------|------------|-------|
+| 10 | 17.12.2026 | Project Pitches and Feedback |
+| 11 | 07.01.2027 | Project Workshop: Model Implementation |
+| 12 | 14.01.2027 | Project Workshop: Parameter Estimation and Evaluation |
+| 13 | 21.01.2027 | Project Progress and Feedback |
+| 14 | 28.01.2027 | Project Workshop: Results and Paper Preparation |
+| 15 | 04.02.2027 | Questions and Office Hours |
+| 16 | 11.02.2027 | Project Presentations |
 
 : {.striped}
 

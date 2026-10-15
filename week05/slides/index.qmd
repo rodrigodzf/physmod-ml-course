@@ -2,7 +2,7 @@
 title: "Neural ODEs"
 subtitle: "Differentiable Physical Modelling and Machine Learning for Sound Synthesis"
 author: "Rodrigo Diaz"
-date: "2026-06-04"
+date: "2026-11-12"
 execute-dir: file
 execute:
   cache: false

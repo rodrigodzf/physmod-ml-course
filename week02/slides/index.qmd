@@ -2,7 +2,7 @@
 title: "Modal and Finite-Difference Methods"
 subtitle: "Differentiable Physical Modelling and Machine Learning for Sound Synthesis"
 author: "Rodrigo Diaz"
-date: "2026-05-14"
+date: "2026-10-22"
 resources:
   - "animations/media/videos/**/*.mp4"
 execute-dir: file

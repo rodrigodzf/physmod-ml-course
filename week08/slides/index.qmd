@@ -2,7 +2,7 @@
 title: 'Deep State-Space Models and Koopman Theory'
 subtitle: 'Differentiable Physical Modelling and Machine Learning for Sound Synthesis'
 author: 'Rodrigo Diaz'
-date: '2026-07-02'
+date: '2026-12-03'
 execute-dir: file
 execute:
   cache: false

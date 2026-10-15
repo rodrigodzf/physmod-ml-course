@@ -2,7 +2,7 @@
 title: "Neural Operators"
 subtitle: "Differentiable Physical Modelling and Machine Learning for Sound Synthesis"
 author: "Rodrigo Diaz"
-date: "2026-06-25"
+date: "2026-11-26"
 execute-dir: file
 execute:
   cache: false

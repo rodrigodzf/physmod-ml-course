@@ -2,7 +2,7 @@
 title: "Nonlinear Systems and Coupled Models"
 subtitle: "Differentiable Physical Modelling and Machine Learning for Sound Synthesis"
 author: "Rodrigo Diaz"
-date: "2026-05-21"
+date: "2026-10-29"
 execute-dir: file
 execute:
   cache: false

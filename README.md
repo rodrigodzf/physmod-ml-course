@@ -28,3 +28,15 @@ Slides are rendered with [Quarto](https://quarto.org), a standalone CLI that is 
 ```sh
 quarto render week01/slides/index.qmd
 ```
+
+## Regenerate the Week 1 Video
+
+The boundary-conditions video compares a raised-cosine pulse reflecting at a fixed (Dirichlet) end and a free (Neumann) end. The fixed end inverts the reflected pulse; the free end preserves its polarity.
+
+```sh
+uv sync --group animations
+source .venv/bin/activate
+python week01/slides/animations/string_boundary_conditions.py
+```
+
+The generator saves a browser-compatible H.264 MP4 to `week01/slides/images/string_boundary_conditions.mp4`, the path used by the introductory slides.

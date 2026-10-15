@@ -15,5 +15,11 @@ dependencies = [
     "scipy>=1.17.1",
 ]
 
+[dependency-groups]
+animations = [
+    "imageio-ffmpeg>=0.6.0",
+    "matplotlib>=3.10",
+]
+
 [tool.uv.sources]
 jaxdiffmodal = { git = "https://github.com/rodrigodzf/jaxdiffmodal", rev = "v0.1.0" }

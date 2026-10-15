@@ -1,6 +1,6 @@
 # Physical Modelling and Machine Learning
 
-[![Discord](https://img.shields.io/badge/Discord-Join%20the%20course-5865F2?logo=discord&logoColor=white)](https://discord.gg/rtrq3PQCHJ)
+[![Discord](https://img.shields.io/badge/Discord-Join%20the%20course-5865F2?logo=discord&logoColor=white)](https://discord.gg/cYFe46hbE4)
 
 Course materials for the **WiSe 2026/2027** seminar on Differentiable Physical Modelling and Machine Learning for Sound Synthesis.
 

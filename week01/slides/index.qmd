@@ -276,7 +276,7 @@ They sit alongside physical models as a useful baseline, and reappear later as t
 
 ## Governing Equations
 
-State is a field $w(\mathbf{x}, t)$ over a spatial domain $\Omega$ (string, membrane, air column), governed by a **PDE**.
+A **PDE** governs the displacement field $w(\mathbf{x}, t)$ over a spatial domain $\Omega$ (string, membrane, air column).
 
 . . .
 
@@ -450,27 +450,56 @@ Human hearing extends to $\sim 20$ kHz, so by Nyquist $T < 1/(2 f_c) \approx 25\
 
 # State-space Representation
 
-## From 2nd-order PDE to State-space {style="font-size: 0.7em;"}
+## What Is a State?
 
-Start from the (forced, damped) 1D wave equation:
+<video controls preload="metadata" poster="images/what_is_a_state.jpg" aria-label="Different velocities give different futures, followed by state choices using displacement and velocity, two consecutive displacement steps, or displacement and momentum" style="width: 100%; max-height: 70vh; display: block; margin: 0 auto;">
+  <source src="images/what_is_a_state.mp4" type="video/mp4">
+  <a href="images/what_is_a_state.mp4">Download the state animation.</a>
+</video>
+
+::: {.notes}
+A photograph gives the string's shape, but we also need to know how each part is moving to resume the simulation. The current state captures the information we need from the past.
+
+State variables depend on the formulation. Other valid choices include displacement and momentum, or current and previous displacement fields for a suitable discrete-time update. We use displacement and velocity in the continuous-time derivation that follows.
+:::
+
+## From the PDE to a State-space Model
+
+1. **Discretise space** using a grid or a finite modal basis.
+2. Obtain **semidiscrete ODEs**: space discrete, time continuous.
+3. Introduce a **state vector** to write a **first-order system**.
+
+. . .
+
+For the string, collect **displacement and velocity at each grid point** into one state vector.
+
+::: {.notes}
+Rearranging a PDE into first-order form in time is possible without discretising space, but it still gives a PDE system. A finite-dimensional ODE state-space model also requires a spatial approximation, such as a grid or a finite modal expansion. The model parameters and boundary conditions are part of the specified model.
+:::
+
+## From 2nd-order PDE to State-space
+
+**PDE:** forced, damped string.
 
 $$\frac{\partial^2 w}{\partial t^2} = \hat{T}^2 \frac{\partial^2 w}{\partial x^2} - 2\hat{d}_1\,\frac{\partial w}{\partial t} + b(x)\,f(t)$$
 
 . . .
 
-**Spatial discretisation** -- replace $\partial^2/\partial x^2$ by a discrete Laplacian $\mathbf{D}_{xx}$ on a grid. Let $\mathbf{w}(t) \in \mathbb{R}^N$ stack the values $w(x_i, t)$:
+**Semidiscrete form:** spatial grid, continuous time.
 
 $$\ddot{\mathbf{w}} = -\mathbf{K}\mathbf{w} - 2\hat{d}_1\,\dot{\mathbf{w}} + \mathbf{b}\,f(t), \qquad \mathbf{K} = -\hat{T}^2 \mathbf{D}_{xx}$$
 
-A 2nd-order system of $N$ coupled ODEs.
-
 . . .
 
-**Lift to first order** -- stack $\mathbf{w}$ and $\dot{\mathbf{w}}$ into a state vector:
+**First-order form:** displacement and velocity as the state.
 
 $$\frac{d}{dt}\begin{bmatrix} \mathbf{w} \\ \dot{\mathbf{w}} \end{bmatrix} = \begin{bmatrix} \mathbf{0} & \mathbf{I} \\ -\mathbf{K} & -2\hat{d}_1\mathbf{I} \end{bmatrix} \begin{bmatrix} \mathbf{w} \\ \dot{\mathbf{w}} \end{bmatrix} + \begin{bmatrix} \mathbf{0} \\ \mathbf{b} \end{bmatrix} f(t)$$
 
-The first block row is the trivial $\dot{\mathbf{w}} = \dot{\mathbf{w}}$; the second is the original PDE. Nonlinearities, when present, sit in the second block row.
+::: {.notes}
+Spatial discretisation replaces the second spatial derivative by the matrix Dxx. The vector w(t) contains the N grid displacements w(x_i,t), giving N coupled second-order ODEs. This is the semidiscrete form because time remains continuous.
+
+Stacking displacement and velocity gives a first-order system, which is still semidiscrete. The first block row updates displacement from velocity; the second gives acceleration from the forced, damped wave equation. Nonlinear terms would enter the second block row. Time discretisation follows later.
+:::
 
 ## The Nonlinear State-space Form
 
@@ -536,19 +565,43 @@ The matrix $\mathbf{A}$ is extremely **sparse** (physics is local).
 
 ## Stability: Energy Conservation
 
-The primary challenge: ensuring **numerical stability**, especially for nonlinear systems.
+**Passive model:** external inputs supply energy; damping removes it.
 
 . . .
 
-**Passivity principle:** a physical system does not generate energy.
+$$\frac{dE}{dt} = P_{\text{in}} - P_{\text{loss}} \leq P_{\text{in}}, \qquad P_{\text{loss}} \geq 0$$
 
-$$\frac{dE}{dt} \leq P_{\text{in}}$$
+Without input: energy stays constant (lossless) or decreases (damped).
 
 . . .
 
-**Energy-conserving schemes:** enforce conservation of a discrete energy quantity to machine precision.
+**Numerical update:** avoid adding artificial energy.
 
-$\Rightarrow$ Guaranteed bounded solutions for arbitrary simulation lengths.
+A discrete energy bound can prevent blow-up when it **bounds the state** and the scheme's **step-size conditions** hold.
+
+::: {.notes}
+For a mass on a spring, E = m v^2 / 2 + k q^2 / 2. If total energy is bounded and m and k are positive, displacement and velocity are bounded too. The analogous energy argument applies to a fixed-end string. With external driving, energy may legitimately increase.
+
+Energy methods use a discrete analogue of the physical energy, which may have a different formula. Conservation alone does not bound the state if the conserved quantity is indefinite or fails to control all state variables. Round-off and solver errors also matter in an implementation. Stability is separate from accuracy and phase error.
+:::
+
+## Stability: Time-stepping Methods
+
+<iframe src="widgets/energy-stability.html" title="Interactive comparison of Forward Euler, centred differences and classical RK4 for oscillator energy" style="width: 100%; height: 500px; border: 0; color-scheme: dark;" loading="lazy"></iframe>
+
+::: {.notes}
+The oscillator has unit mass and stiffness, so omega = 1 rad/s. All methods use q(0) = 1 m and v(0) = 0.2 m/s. The non-zero initial velocity also exposes growth at the Verlet stability boundary. The time step can be entered directly, from 0.001 s to 3 s, to compare fine Euler steps with larger steps in the other schemes.
+
+Forward Euler uses q_next = q + dt v and v_next = v - dt q. Its physical energy grows by the factor 1 + dt^2 at each step.
+
+Centred differences use q_next = 2 q - q_previous - dt^2 q, initialised with q_previous = q(0) - dt v(0) - dt^2 q(0) / 2. This is the Störmer-Verlet position recurrence, equivalent to velocity Verlet for this oscillator. The plotted velocity is the centred difference (q_next - q_previous) / (2 dt).
+
+The stable regime is omega dt < 2. Physical energy can oscillate while a modified discrete energy is conserved. For this oscillator that invariant is proportional to v_n^2 + omega^2 (1 - omega^2 dt^2 / 4) q_n^2. It is positive definite below the limit. At the limit it ceases to control displacement; above it the invariant is indefinite. Conserving it therefore gives no state bound in those regimes. The chart always plots the physical energy, normalised by its initial value.
+
+Classical RK4 uses four stages with weights 1/6, 1/3, 1/3 and 1/6. For this oscillator its energy multiplier is 1 - (omega dt)^6 / 72 + (omega dt)^8 / 576. It introduces numerical damping for 0 < omega dt < 2 sqrt(2), conserves physical energy at that boundary in exact arithmetic, and injects energy above it. A bounded energy or small energy error does not guarantee an accurate phase. This is fixed-step classical RK4, not an embedded RK4(3) pair.
+
+RK4 coefficients and imaginary-axis stability interval: https://ketch.github.io/numipedia/methods/RK44.html
+:::
 
 ## Next Week
 

@@ -40,3 +40,19 @@ python week01/slides/animations/string_boundary_conditions.py
 ```
 
 The generator saves a browser-compatible H.264 MP4 to `week01/slides/images/string_boundary_conditions.mp4`, the path used by the introductory slides.
+
+## Regenerate the State Animation
+
+The Manim animation shows why the same string shape can lead to different motion, then compares states using displacement and velocity, two consecutive displacement steps, and displacement and momentum.
+
+```sh
+uv sync
+source .venv/bin/activate
+python week01/slides/animations/what_is_a_state.py
+```
+
+The generator saves `week01/slides/images/what_is_a_state.mp4` and a matching `.jpg` poster. Use `--quality low_quality` for a quick preview.
+
+## Interactive Energy Example
+
+Week 1 embeds `week01/slides/widgets/energy-stability.html`. Its editable fragment is `energy-stability.fragment.html` in the same directory. After editing the fragment, re-export it with the Visualize standalone renderer. The example compares Forward Euler, centred differences (Störmer-Verlet) and classical RK4. The slider and numeric input cover time steps from 0.001 s to 3 s, including unstable regimes for Verlet and RK4.

@@ -1,0 +1,243 @@
+<div id="energy-stability-explainer">
+  <h3>Energy in an unforced, undamped oscillator</h3>
+  <div class="viz-controls">
+    <label class="form-label" for="energy-method">Time-stepping method
+      <select id="energy-method" class="form-select">
+        <option value="euler">Forward Euler</option>
+        <option value="verlet">Centred differences (Störmer-Verlet)</option>
+        <option value="rk4">Classical Runge-Kutta 4</option>
+      </select>
+    </label>
+    <div class="form-label">
+      <label for="energy-step-value">Time step Δt (s)</label>
+      <input id="energy-step-value" class="form-control tabular-nums" type="number" min="0.001" max="3" step="0.001" value="0.20">
+      <input id="energy-time-step" class="form-range" type="range" aria-label="Time step slider" min="0.001" max="3" step="0.001" value="0.20">
+    </div>
+  </div>
+  <div class="energy-chart"></div>
+  <div id="energy-method-status" aria-live="polite"></div>
+  <div class="text-small">ω = 1 rad/s; initial displacement = 1 m; initial velocity = 0.2 m/s</div>
+  <style>
+    #energy-stability-explainer .energy-chart { width: 100%; }
+    #energy-stability-explainer .energy-chart svg { display: block; width: 100%; }
+    #energy-stability-explainer .energy-chart text { fill: var(--foreground); font-size: 12px; }
+    #energy-stability-explainer .energy-chart .domain,
+    #energy-stability-explainer .energy-chart .tick line { stroke: var(--border); }
+    #energy-stability-explainer .energy-path { fill: none; stroke-width: 2; }
+    #energy-stability-explainer .euler-path { stroke: var(--viz-series-2); }
+    #energy-stability-explainer .verlet-path { stroke: var(--viz-series-1); }
+    #energy-stability-explainer .rk4-path { stroke: var(--viz-series-3); }
+    #energy-stability-explainer .reference-path { stroke: var(--muted-foreground); stroke-dasharray: 6 4; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+  <script>
+    (() => {
+      const root = document.getElementById('energy-stability-explainer');
+      const slider = root.querySelector('#energy-time-step');
+      const methodControl = root.querySelector('#energy-method');
+      const stepControl = root.querySelector('#energy-step-value');
+      const status = root.querySelector('#energy-method-status');
+      const chart = root.querySelector('.energy-chart');
+      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const saved = window.openai?.widgetState?.modelContent;
+      const validStep = value => Number.isFinite(value) && value >= 0.001 && value <= 3;
+      const methods = {
+        euler: { name: 'Forward Euler', label: 'Euler', className: 'euler-path' },
+        verlet: { name: 'centred differences, Störmer-Verlet', label: 'Verlet', className: 'verlet-path' },
+        rk4: { name: 'classical Runge-Kutta 4', label: 'RK4', className: 'rk4-path' }
+      };
+      const validMethod = value => Object.hasOwn(methods, value);
+      let timeStep = validStep(saved?.timeStep) ? saved.timeStep : 0.2;
+      let method = validMethod(saved?.method) ? saved.method : 'euler';
+      let lastWidth = 0;
+      slider.value = String(timeStep);
+      methodControl.value = method;
+
+      function simulate(step, method) {
+        const initialPosition = 1;
+        const initialVelocity = 0.2;
+        const initialEnergy = initialPosition**2 + initialVelocity**2;
+        const steps = Math.round(20 / step);
+        let position = initialPosition;
+        let velocity = initialVelocity;
+        let previousPosition = initialPosition - step * initialVelocity - 0.5 * step**2 * initialPosition;
+        const samples = [];
+        for (let index = 0; index <= steps; index++) {
+          if (method === 'verlet') {
+            const followingPosition = 2 * position - previousPosition - step**2 * position;
+            velocity = (followingPosition - previousPosition) / (2 * step);
+            samples.push({
+              time: index * step,
+              energy: (position**2 + velocity**2) / initialEnergy,
+              position,
+              velocity,
+              discreteEnergy: velocity**2 + (1 - step**2 / 4) * position**2
+            });
+            previousPosition = position;
+            position = followingPosition;
+          } else if (method === 'rk4') {
+            samples.push({ time: index * step, energy: (position**2 + velocity**2) / initialEnergy, position, velocity });
+            const firstPositionSlope = velocity;
+            const firstVelocitySlope = -position;
+            const secondPositionSlope = velocity + step * firstVelocitySlope / 2;
+            const secondVelocitySlope = -(position + step * firstPositionSlope / 2);
+            const thirdPositionSlope = velocity + step * secondVelocitySlope / 2;
+            const thirdVelocitySlope = -(position + step * secondPositionSlope / 2);
+            const fourthPositionSlope = velocity + step * thirdVelocitySlope;
+            const fourthVelocitySlope = -(position + step * thirdPositionSlope);
+            position += step * (firstPositionSlope + 2 * secondPositionSlope + 2 * thirdPositionSlope + fourthPositionSlope) / 6;
+            velocity += step * (firstVelocitySlope + 2 * secondVelocitySlope + 2 * thirdVelocitySlope + fourthVelocitySlope) / 6;
+          } else {
+            samples.push({ time: index * step, energy: (position**2 + velocity**2) / initialEnergy, position, velocity });
+            const followingPosition = position + step * velocity;
+            velocity -= step * position;
+            position = followingPosition;
+          }
+        }
+        return samples;
+      }
+
+      function resample(values, logarithmic = false) {
+        const lastTime = values[values.length - 1].time;
+        let upper = 1;
+        return Array.from({ length: 161 }, (_, index) => {
+          const time = index * lastTime / 160;
+          while (upper < values.length - 1 && values[upper].time < time) upper++;
+          const before = values[upper - 1];
+          const after = values[upper];
+          const fraction = (time - before.time) / (after.time - before.time);
+          const energy = logarithmic
+            ? Math.exp(Math.log(before.energy) + fraction * (Math.log(after.energy) - Math.log(before.energy)))
+            : before.energy + fraction * (after.energy - before.energy);
+          return { time, energy };
+        });
+      }
+
+      function describeRegime(step, method) {
+        if (method === 'euler') return 'Forward Euler adds energy at every step for this oscillator.';
+        if (method === 'rk4') {
+          if (step < 2 * Math.SQRT2) return 'ωΔt < 2√2: RK4 introduces numerical energy loss, which becomes smaller with finer steps.';
+          if (step > 2 * Math.SQRT2) return 'ωΔt > 2√2: RK4 is unstable and adds energy at every step.';
+          return 'ωΔt = 2√2: RK4 lies on its stability boundary; the oscillation phase is inaccurate.';
+        }
+        if (step < 2) return 'ωΔt < 2: physical energy stays bounded; a modified discrete energy is conserved.';
+        if (step > 2) return 'ωΔt > 2: unstable regime; energy and oscillation amplitude can grow without bound.';
+        return 'ωΔt = 2: stability boundary; this initial velocity produces growing oscillations.';
+      }
+
+      function draw(animate) {
+        const width = Math.max(280, chart.getBoundingClientRect().width);
+        const height = 280;
+        const margin = { top: 24, right: 18, bottom: 48, left: 92 };
+        const values = simulate(timeStep, method);
+        const end = values[values.length - 1];
+        const reference = [{ time: 0, energy: 1 }, { time: end.time, energy: 1 }];
+        const observations = values.concat(reference);
+        const timeExtent = d3.extent(observations, point => point.time);
+        const energyExtent = d3.extent(observations, point => point.energy);
+        const logarithmic = energyExtent[1] / energyExtent[0] > 3;
+        const padding = Math.max((energyExtent[1] - energyExtent[0]) * 0.18, 0.00002);
+        const domain = logarithmic
+          ? [energyExtent[0] / 1.35, energyExtent[1] * 1.55]
+          : [Math.max(0, energyExtent[0] - padding), energyExtent[1] + padding];
+        const x = d3.scaleLinear().domain(timeExtent).range([margin.left + 2, width - margin.right - 2]);
+        const y = (logarithmic ? d3.scaleLog() : d3.scaleLinear()).domain(domain).range([height - margin.bottom - 2, margin.top + 2]);
+        const svg = d3.select(chart).selectAll('svg').data([null]).join('svg')
+          .attr('viewBox', '0 0 ' + width + ' ' + height)
+          .attr('role', 'img').attr('aria-label', 'Physical energy relative to its initial value for ' + methods[method].name + ', compared with the initial energy. ' + describeRegime(timeStep, method));
+        svg.selectAll('title').data([null]).join('title').text('Physical energy over time');
+        svg.selectAll('rect[data-chart-frame]').data([null]).join('rect')
+          .attr('data-chart-frame', '').attr('x', margin.left).attr('y', margin.top)
+          .attr('width', width - margin.left - margin.right).attr('height', height - margin.top - margin.bottom)
+          .attr('fill', 'none').attr('stroke', 'var(--border)');
+        svg.selectAll('.x-axis').data([null]).join('g').attr('class', 'x-axis')
+          .attr('transform', 'translate(0,' + (height - margin.bottom) + ')')
+          .call(d3.axisBottom(x).ticks(width < 400 ? 2 : 5).tickSizeOuter(0));
+        const yAxis = d3.axisLeft(y).ticks(5, logarithmic ? '~g' : '.6~g').tickSizeOuter(0);
+        svg.selectAll('.y-axis').data([null]).join('g').attr('class', 'y-axis')
+          .attr('transform', 'translate(' + margin.left + ',0)').call(yAxis);
+        svg.selectAll('.axis-title[data-axis="x"]').data([null]).join('text')
+          .attr('class', 'axis-title').attr('data-axis', 'x')
+          .attr('x', (margin.left + width - margin.right) / 2).attr('y', height - 10)
+          .attr('text-anchor', 'middle').text('Time (s)');
+        svg.selectAll('.axis-title[data-axis="y"]').data([null]).join('text')
+          .attr('class', 'axis-title').attr('data-axis', 'y')
+          .attr('transform', 'translate(16,' + ((margin.top + height - margin.bottom) / 2) + ') rotate(-90)')
+          .attr('text-anchor', 'middle').text('Energy / initial energy' + (logarithmic ? ' (log)' : ''));
+        const line = d3.line().x(point => x(point.time)).y(point => y(point.energy));
+        const series = [
+          { name: 'selected', values: resample(values, logarithmic), className: methods[method].className },
+          { name: 'reference', values: resample(reference, logarithmic), className: 'reference-path' }
+        ];
+        const paths = svg.selectAll('path.energy-path').data(series, entry => entry.name)
+          .join('path').attr('class', entry => 'energy-path ' + entry.className);
+        paths.interrupt();
+        if (animate && !reducedMotion && lastWidth === width) {
+          paths.transition().duration(180).attr('d', entry => line(entry.values));
+        } else {
+          paths.attr('d', entry => line(entry.values));
+        }
+        const labelMinimum = margin.top + 14;
+        const labelMaximum = height - margin.bottom - 7;
+        let selectedY = Math.max(labelMinimum, Math.min(labelMaximum, y(end.energy) - 10));
+        let referenceY = Math.max(labelMinimum, Math.min(labelMaximum, y(1) - 10));
+        if (Math.abs(selectedY - referenceY) < 20) {
+          if (referenceY + 20 <= labelMaximum) referenceY += 20;
+          else selectedY = referenceY - 20;
+        }
+        const labels = [
+          { key: 'selected', text: methods[method].label + ': ' + d3.format('.6~g')(end.energy) + '×', y: selectedY },
+          { key: 'reference', text: 'Initial energy', y: referenceY }
+        ];
+        svg.selectAll('.energy-direct-label').data(labels, entry => entry.key).join('text')
+          .attr('class', 'energy-direct-label').attr('text-anchor', 'end')
+          .attr('x', width - margin.right - 7).attr('y', entry => entry.y).text(entry => entry.text);
+        if (document.activeElement !== stepControl) stepControl.value = String(timeStep);
+        status.textContent = describeRegime(timeStep, method);
+        const textBounds = svg.selectAll('text').nodes().map(node => ({ node, bounds: node.getBoundingClientRect() }));
+        const xTickBounds = textBounds.filter(entry => entry.node.closest('.x-axis'));
+        let previousRight = -Infinity;
+        for (const entry of xTickBounds) {
+          entry.node.style.visibility = entry.bounds.left < previousRight + 4 ? 'hidden' : 'visible';
+          if (entry.node.style.visibility === 'visible') previousRight = entry.bounds.right;
+        }
+        lastWidth = width;
+      }
+
+      function saveState() {
+        window.openai?.setWidgetState?.({ modelContent: { timeStep, method }, privateContent: null }).catch(() => {});
+      }
+      slider.addEventListener('input', () => {
+        timeStep = Number(slider.value);
+        draw(true);
+      });
+      slider.addEventListener('change', saveState);
+      stepControl.addEventListener('input', () => {
+        if (!stepControl.validity.valid || !validStep(stepControl.valueAsNumber)) return;
+        timeStep = stepControl.valueAsNumber;
+        slider.value = String(timeStep);
+        draw(true);
+      });
+      stepControl.addEventListener('change', () => {
+        stepControl.value = String(timeStep);
+        saveState();
+      });
+      methodControl.addEventListener('change', () => {
+        method = methodControl.value;
+        draw(true);
+        saveState();
+      });
+      window.addEventListener('openai:set_globals', event => {
+        const incoming = event.detail?.globals?.widgetState?.modelContent;
+        if (validStep(incoming?.timeStep)) timeStep = incoming.timeStep;
+        if (validMethod(incoming?.method)) method = incoming.method;
+        slider.value = String(timeStep);
+        stepControl.value = String(timeStep);
+        methodControl.value = method;
+        draw(false);
+      });
+      new ResizeObserver(() => draw(false)).observe(chart);
+      draw(false);
+    })();
+  </script>
+</div>

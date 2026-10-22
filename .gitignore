@@ -8,4 +8,6 @@ week*/slides/*.html
 !week01/slides/animations/
 week01/slides/animations/*
 !week01/slides/animations/string_boundary_conditions.py
+!week01/slides/animations/what_is_a_state.py
 !week01/slides/images/string_boundary_conditions.mp4
+!week01/slides/images/what_is_a_state.mp4

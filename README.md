@@ -7,7 +7,7 @@ Course materials for the **WiSe 2026/2027** seminar on Differentiable Physical M
 ## Course Information
 
 - **Format:** Seminar (SE)
-- **Time:** Thursdays, 14:00–16:00, from **15 October 2026 to 11 February 2027** (local Berlin time)
+- **Time:** Thursdays, 14:15–16:00, from **15 October 2026 to 11 February 2027** (local Berlin time)
 - **Room:** [FH 313, Fraunhoferstraße 33–36, 10587 Berlin](https://www.tu.berlin/en/studienberatung/advising-information/studying-with-impairments/accessibility/fh-fraunhoferstrasse-gebaeude)
 - **Christmas break:** No sessions on **24 or 31 December 2026**. Sessions resume on **7 January 2027**.
 - **Credits:** 3 ECTS

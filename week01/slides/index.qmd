@@ -56,7 +56,7 @@ Welcome to the course. This first session sets the scene for the entire course b
 
 - **Semester:** WiSe 2026/2027, Seminar (SE)
 - **Room:** [FH 313, Fraunhoferstraße 33–36](https://www.tu.berlin/en/studienberatung/advising-information/studying-with-impairments/accessibility/fh-fraunhoferstrasse-gebaeude)
-- **Time:** Thursdays, 14:00–16:00, 15 October 2026 to 11 February 2027
+- **Time:** Thursdays, 14:15–16:00, 15 October 2026 to 11 February 2027
 - **Christmas break:** No sessions on 24 or 31 December; resume 7 January
 - **Credits:** 3 ECTS
 - **Tools:** Python, JAX, PyTorch

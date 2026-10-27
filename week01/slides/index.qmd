@@ -79,8 +79,8 @@ Welcome to the course. This first session sets the scene for the entire course b
 |---------|------------|-------|
 | **1** | **15.10.2026** | **Introduction to Physical Modelling** (today) |
 | 2 | 22.10.2026 | Modal and Finite-Difference Methods |
-| 3 | 29.10.2026 | Nonlinear Systems and Coupled Models |
-| 4 | 05.11.2026 | Differentiable Programming for Audio |
+| 3 | 29.10.2026 | JAX Tutorial: Differentiable Programming for Audio |
+| 4 | 05.11.2026 | Nonlinear Systems and Coupled Models |
 | 5 | 12.11.2026 | Neural ODEs |
 | 6 | 19.11.2026 | Physics-Informed Neural Networks |
 | 7 | 26.11.2026 | Neural Operators (FNO) |

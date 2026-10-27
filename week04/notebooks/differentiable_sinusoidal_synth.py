@@ -1,408 +1,433 @@
 # %% [markdown]
 # # Differentiable sinusoidal synth
 #
-# This notebook is the smallest possible version of the Week 4 idea:
+# Continue from `jax_basics.py`: the same synthesis, loss and gradient loop can
+# recover more than one parameter. Run this file's cells from top to bottom
+# in the course Python environment. It includes its own setup.
 #
-# $$\theta \rightarrow \hat y \rightarrow \mathcal L(\hat y, y)
-# \rightarrow \nabla_\theta \mathcal L.$$
-#
-# We create a target damped sinusoid, write the synthesiser as a JAX function,
-# and use automatic differentiation to fit amplitude, damping, frequency and
-# phase.
+# First fit amplitude and damping with frequency and phase fixed. Then group
+# the learnable parameters in a dictionary and use Optax for updates. Finally,
+# investigate how the initial frequency affects convergence. The complex
+# recursion at the end is optional.
 
 # %%
-from __future__ import annotations
-
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
 import optax
-
-try:
-    from IPython import get_ipython
-    from IPython.display import Audio, display
-except ImportError:  # Allows the file to run as a plain Python script.
-    get_ipython = None
-    Audio = None
-    display = None
+from IPython import get_ipython
+from IPython.display import Audio, display
 
 jax.config.update("jax_enable_x64", True)
 
-print("jax", jax.__version__, "devices:", jax.devices())
+print("JAX version:", jax.__version__)
+print("Available devices:", jax.devices())
 
 
-def show_audio(y, rate):
-    if Audio is not None and get_ipython is not None and get_ipython() is not None:
-        display(Audio(np.asarray(y), rate=rate))
+def show_audio(signal, sample_rate):
+    if get_ipython() is not None:
+        display(Audio(np.asarray(signal), rate=sample_rate, normalize=False))
+
 
 # %% [markdown]
-# ## Target sound
+# ## 1. Add damping to the synthesiser
 #
-# The signal is a damped sinusoid:
+# The sinusoid now has an exponential envelope:
 #
 # $$y_n = A e^{-\gamma t_n}\sin(2\pi f t_n + \varphi).$$
+#
+# $A$ is the initial amplitude, $\gamma$ is the decay rate in inverse seconds,
+# $f$ is the frequency in Hz, and $\varphi$ is the phase in radians. Larger
+# positive $\gamma$ means faster decay. Setting it to zero removes damping.
+# We use 64-bit arithmetic for the comparisons later in this tutorial.
+
 
 # %%
-sample_rate = 8000
-duration = 0.5
-n_steps = int(sample_rate * duration)
-t = jnp.arange(n_steps) / sample_rate
-
-
-def damped_sinusoid(t, amplitude, gamma, frequency_hz, phase):
-    return amplitude * jnp.exp(-gamma * t) * jnp.sin(
-        2.0 * jnp.pi * frequency_hz * t + phase
+def damped_sinusoid(t, amplitude, gamma, frequency_hz, phase=0.0):
+    return (
+        amplitude
+        * jnp.exp(-gamma * t)
+        * jnp.sin(2.0 * jnp.pi * frequency_hz * t + phase)
     )
 
 
-target_params = {
-    "amplitude": jnp.array(0.8),
-    "gamma": jnp.array(3.0),
-    "frequency_hz": jnp.array(440.0),
-    "phase": jnp.array(0.6),
-}
+sample_rate = 8000
+duration = 0.5
+t = jnp.arange(int(sample_rate * duration)) / sample_rate
 
-y_target = damped_sinusoid(t, **target_params)
+target_amplitude = 0.8
+target_gamma = 3.0
+known_frequency_hz = 440.0
+known_phase = 0.0
 
-fig, ax = plt.subplots(figsize=(8, 2.5))
-ax.plot(np.asarray(t[:800]), np.asarray(y_target[:800]))
+y_target = damped_sinusoid(
+    t, target_amplitude, target_gamma, known_frequency_hz, known_phase
+)
+
+fig, ax = plt.subplots(figsize=(8, 3))
+ax.plot(np.asarray(t), np.asarray(y_target), alpha=0.6, label="target")
+ax.plot(
+    np.asarray(t),
+    np.asarray(target_amplitude * jnp.exp(-target_gamma * t)),
+    "k--",
+    label="amplitude envelope",
+)
 ax.set_xlabel("Time [s]")
 ax.set_ylabel("Amplitude")
-ax.set_title("Target damped sinusoid, first 100 ms")
-ax.grid(True)
+ax.legend()
 fig.tight_layout()
-
+plt.show()
 show_audio(y_target, sample_rate)
 
 # %% [markdown]
-# ## Learnable synthesiser
+# **Try it:** compare `target_gamma = 0.0`, `3.0` and `8.0`. Rerun the previous
+# cell each time. Restore `3.0` before continuing.
 #
-# We optimise unconstrained parameters, then map them to physical values. This
-# keeps amplitude, damping and frequency positive while still letting Optax make
-# unconstrained gradient updates.
+# ## 2. Fit two parameters with familiar gradient updates
+#
+# Keep frequency and phase fixed. Our two learnable parameters are $A$ and
+# $\gamma$, and the loss is still the mean squared sample error:
+#
+# $$\mathcal L(A,\gamma) = \frac{1}{N}\sum_n(\hat y_n(A,\gamma)-y_n)^2.$$
+#
+# `argnums=(0, 1)` asks for derivatives with respect to the first two arguments.
+
 
 # %%
-def inv_softplus(x):
-    x = jnp.asarray(x)
-    return x + jnp.log(-jnp.expm1(-x))
+def amplitude_damping_loss(amplitude, gamma, t, target, frequency_hz, phase):
+    prediction = damped_sinusoid(t, amplitude, gamma, frequency_hz, phase)
+    return jnp.mean((prediction - target) ** 2)
 
 
-def init_raw_params(
-    amplitude=0.3,
-    gamma=1.0,
-    frequency_hz=430.0,
-    phase=0.0,
-):
-    return {
-        "raw_amplitude": inv_softplus(amplitude),
-        "raw_gamma": inv_softplus(gamma),
-        "raw_frequency_hz": inv_softplus(frequency_hz),
-        "phase": jnp.asarray(phase),
-    }
+amplitude_damping_gradient = jax.value_and_grad(amplitude_damping_loss, argnums=(0, 1))
 
-
-def physical_params(raw_params):
-    return {
-        "amplitude": jax.nn.softplus(raw_params["raw_amplitude"]),
-        "gamma": jax.nn.softplus(raw_params["raw_gamma"]),
-        "frequency_hz": jax.nn.softplus(raw_params["raw_frequency_hz"]),
-        "phase": raw_params["phase"],
-    }
-
-
-def synth(raw_params):
-    params = physical_params(raw_params)
-    return damped_sinusoid(t, **params)
-
-
-raw_params = init_raw_params()
-y_initial = synth(raw_params)
-
-print("Initial physical parameters:")
-for name, value in physical_params(raw_params).items():
-    print(f"  {name:>12s}: {float(value):8.4f}")
-
-# %% [markdown]
-# ## Loss and gradient
-#
-# We start with the simplest possible audio loss:
-#
-# $$\mathcal L(\theta)
-# =
-# \frac{1}{N}
-# \sum_n
-# \left(
-# \hat y_n(\theta) - y_n
-# \right)^2.$$
-
-# %%
-def loss_fn(raw_params):
-    y_hat = synth(raw_params)
-    return jnp.mean((y_hat - y_target) ** 2)
-
-
-loss_value, grads = jax.value_and_grad(loss_fn)(raw_params)
-
+initial_amplitude = 0.3
+initial_gamma = 1.0
+loss_value, (amplitude_gradient, gamma_gradient) = amplitude_damping_gradient(
+    initial_amplitude, initial_gamma, t, y_target, known_frequency_hz, known_phase
+)
 print("Initial loss:", float(loss_value))
-print("Gradient leaves:")
-for name, value in grads.items():
-    print(f"  {name:>16s}: {float(value): .6e}")
+print("Amplitude gradient:", float(amplitude_gradient))
+print("Damping gradient:", float(gamma_gradient))
 
 # %% [markdown]
-# ## Optimisation loop
-#
-# Automatic differentiation gives the gradient. Optax turns that gradient into
-# parameter updates.
+# **Predict:** would you expect both gradients to point directly towards the
+# target parameters? Amplitude and damping affect the same envelope, so their
+# updates interact. Check the fitted result after several updates.
+
 
 # %%
-learning_rate = 3e-2
-n_updates = 3000
-log_every = 25
+@jax.jit
+def manual_step(amplitude, gamma, t, target, frequency_hz, phase, learning_rate):
+    loss_value, (amplitude_gradient, gamma_gradient) = amplitude_damping_gradient(
+        amplitude, gamma, t, target, frequency_hz, phase
+    )
+    return (
+        amplitude - learning_rate * amplitude_gradient,
+        gamma - learning_rate * gamma_gradient,
+        loss_value,
+    )
 
-optimizer = optax.adam(learning_rate)
-opt_state = optimizer.init(raw_params)
+
+learning_rate = 1.0
+n_manual_updates = 3000
+amplitude = jnp.asarray(initial_amplitude)
+gamma = jnp.asarray(initial_gamma)
+manual_history = []
+
+for step in range(n_manual_updates):
+    amplitude, gamma, loss_value = manual_step(
+        amplitude, gamma, t, y_target, known_frequency_hz, known_phase, learning_rate
+    )
+    manual_history.append(float(loss_value))
+
+print(f"Amplitude: target={target_amplitude:.4f}, fitted={float(amplitude):.4f}")
+print(f"Damping:   target={target_gamma:.4f}, fitted={float(gamma):.4f}")
+
+fig, axes = plt.subplots(1, 2, figsize=(10, 3))
+axes[0].semilogy(manual_history)
+axes[0].set_xlabel("Update")
+axes[0].set_ylabel("Mean squared error")
+axes[0].set_title("Fitting amplitude and damping")
+for label, envelope, style in (
+    ("target", target_amplitude * jnp.exp(-target_gamma * t), "-"),
+    ("initial", initial_amplitude * jnp.exp(-initial_gamma * t), "--"),
+    ("fitted", amplitude * jnp.exp(-gamma * t), ":"),
+):
+    axes[1].plot(np.asarray(t), np.asarray(envelope), style, label=label)
+axes[1].set_xlabel("Time [s]")
+axes[1].set_ylabel("Amplitude envelope")
+axes[1].legend()
+fig.tight_layout()
+plt.show()
+
+# %% [markdown]
+# **Try it:** change `n_manual_updates` to `100`. Does a small waveform error
+# already imply accurate physical parameters? Restore `3000` afterwards.
+#
+# ## 3. Collect learnable parameters in a dictionary
+#
+# A dictionary gives each parameter a name. JAX treats it as a *pytree*, a
+# nested container of values. Differentiating a scalar loss with respect to
+# that dictionary returns a dictionary of gradients with the same structure.
+# The frequency and phase remain separate, fixed inputs.
+
+
+# %%
+def parameter_loss(params, t, target, frequency_hz, phase):
+    return amplitude_damping_loss(
+        params["amplitude"], params["gamma"], t, target, frequency_hz, phase
+    )
+
+
+initial_params = {
+    "amplitude": jnp.asarray(initial_amplitude),
+    "gamma": jnp.asarray(initial_gamma),
+}
+loss_value, grads = jax.value_and_grad(parameter_loss)(
+    initial_params, t, y_target, known_frequency_hz, known_phase
+)
+print("Parameters:", initial_params)
+print("Gradients:", grads)
+
+# %% [markdown]
+# ## 4. Let Optax handle the updates
+#
+# Optax supplies optimisation algorithms. Here we use Adam, which adapts
+# updates using running gradient statistics. Its state is passed into each
+# step and returned for the next one. `apply_updates` adds the updates to the
+# corresponding parameters; Optax already includes the descent direction.
+#
+# Start from the same guesses as the manual loop. Rerunning this cell resets
+# both the parameters and optimiser state.
+
+# %%
+optimizer = optax.adam(learning_rate=0.03)
 
 
 @jax.jit
-def train_step(raw_params, opt_state):
-    loss_value, grads = jax.value_and_grad(loss_fn)(raw_params)
-    updates, opt_state = optimizer.update(grads, opt_state, raw_params)
-    raw_params = optax.apply_updates(raw_params, updates)
-    return raw_params, opt_state, loss_value
+def train_step(params, opt_state, t, target, frequency_hz, phase):
+    loss_value, grads = jax.value_and_grad(parameter_loss)(
+        params, t, target, frequency_hz, phase
+    )
+    updates, opt_state = optimizer.update(grads, opt_state, params)
+    params = optax.apply_updates(params, updates)
+    return params, opt_state, loss_value
 
 
-history = []
+params = dict(initial_params)
+opt_state = optimizer.init(params)
+n_adam_updates = 600
+adam_history = []
 
-for step in range(n_updates + 1):
-    if step % log_every == 0:
-        history.append((step, float(loss_fn(raw_params))))
+for step in range(n_adam_updates):
+    params, opt_state, loss_value = train_step(
+        params, opt_state, t, y_target, known_frequency_hz, known_phase
+    )
+    adam_history.append(float(loss_value))
 
-    if step < n_updates:
-        raw_params, opt_state, loss_value = train_step(raw_params, opt_state)
-
-fitted_params = physical_params(raw_params)
-y_fitted = synth(raw_params)
-
-print("Final physical parameters:")
-for name, value in fitted_params.items():
-    print(f"  {name:>12s}: {float(value):8.4f}")
-print("Final loss:", float(loss_fn(raw_params)))
-
-# %% [markdown]
-# ## Inspect the result
-
-# %%
-history_steps = np.asarray([item[0] for item in history])
-history_loss = np.asarray([item[1] for item in history])
-
-fig, axes = plt.subplots(2, 1, figsize=(8, 5))
-
-axes[0].semilogy(history_steps, history_loss)
-axes[0].set_xlabel("Update")
-axes[0].set_ylabel("MSE loss")
-axes[0].set_title("Optimisation history")
-axes[0].grid(True)
-
-n_plot = 800
-axes[1].plot(np.asarray(t[:n_plot]), np.asarray(y_target[:n_plot]), label="target")
-axes[1].plot(
-    np.asarray(t[:n_plot]),
-    np.asarray(y_initial[:n_plot]),
-    "--",
-    label="initial",
-    alpha=0.8,
+print("Fitted parameters:", {name: float(value) for name, value in params.items()})
+print(
+    "Final loss:",
+    float(parameter_loss(params, t, y_target, known_frequency_hz, known_phase)),
 )
-axes[1].plot(
-    np.asarray(t[:n_plot]),
-    np.asarray(y_fitted[:n_plot]),
-    ":",
-    label="fitted",
-    linewidth=2.0,
+y_fitted = damped_sinusoid(
+    t, params["amplitude"], params["gamma"], known_frequency_hz, known_phase
 )
-axes[1].set_xlabel("Time [s]")
-axes[1].set_ylabel("Amplitude")
-axes[1].set_title("First 100 ms")
-axes[1].legend()
-axes[1].grid(True)
-
-fig.tight_layout()
-
-print("Fitted")
 show_audio(y_fitted, sample_rate)
 
-# %% [markdown]
-# ## Complex recursion version
-#
-# The same oscillator can be written using the complex update from Week 3:
-#
-# $$z^{n+1} = a z^n,$$
-#
-# with
-#
-# $$a = e^{(-\gamma + i2\pi f)\Delta t}.$$
-#
-# The real-valued output is:
-#
-# $$\hat y_n = \operatorname{Re}\{z^n\}.$$
-
-# %%
-def complex_modal_synth(frequency_hz, amplitude=0.8, gamma=3.0, phase=0.6):
-    dt = 1.0 / sample_rate
-    pole = -gamma + 1j * 2.0 * jnp.pi * frequency_hz
-    a = jnp.exp(pole * dt)
-    z0 = amplitude * jnp.exp(1j * phase)
-    z = z0 * a ** jnp.arange(n_steps)
-    return z.real
-
-
-y_complex_target = complex_modal_synth(target_params["frequency_hz"])
-
-fig, ax = plt.subplots(figsize=(8, 2.5))
-ax.plot(np.asarray(t[:800]), np.asarray(y_complex_target[:800]))
-ax.set_xlabel("Time [s]")
-ax.set_ylabel("Amplitude")
-ax.set_title("Complex recursion target, first 100 ms")
-ax.grid(True)
+fig, ax = plt.subplots(figsize=(7, 3))
+ax.semilogy(manual_history, label="manual gradient descent")
+ax.semilogy(adam_history, label="Adam")
+ax.set_xlabel("Update")
+ax.set_ylabel("Mean squared error")
+ax.set_title("Two update rules from the same starting point")
+ax.legend()
 fig.tight_layout()
+plt.show()
 
 # %% [markdown]
-# ## Optimise one frequency
+# **Try it:** replace `optax.adam(learning_rate=0.03)` with
+# `optax.sgd(learning_rate=1.0)` and rerun this cell. Compare the first 600
+# updates with the manual loop. These particular learning rates suit this
+# example; neither algorithm guarantees convergence for arbitrary settings.
 #
-# Now keep amplitude, damping and phase fixed, and optimise only the frequency.
-# This makes the loss a one-dimensional function:
+# We used direct physical parameters to keep the first fit simple. These
+# updates do not enforce positivity. For a constrained model, we could learn
+# an unconstrained value and map it to positive damping with `jax.nn.softplus`.
 #
-# $$\mathcal L(f)
-# =
-# \frac{1}{N}
-# \sum_n
-# \left(
-# \hat y_n(f) - y_n
-# \right)^2.$$
+# ## 5. What changes when we learn frequency?
+#
+# Now hold amplitude, damping and phase at their true values and learn only
+# frequency. This isolates the effect of initialisation from errors in the
+# other parameters. We will compare one starting point close to 440 Hz with
+# another farther away, using the same waveform MSE and optimiser.
+
 
 # %%
-def complex_frequency_loss(frequency_hz):
-    y_hat = complex_modal_synth(frequency_hz)
-    return jnp.mean((y_hat - y_complex_target) ** 2)
+def frequency_loss(frequency_hz, t, target, fixed_params):
+    prediction = damped_sinusoid(
+        t,
+        fixed_params["amplitude"],
+        fixed_params["gamma"],
+        frequency_hz,
+        fixed_params["phase"],
+    )
+    return jnp.mean((prediction - target) ** 2)
+
+
+fixed_params = {
+    "amplitude": jnp.asarray(target_amplitude),
+    "gamma": jnp.asarray(target_gamma),
+    "phase": jnp.asarray(known_phase),
+}
+frequency_optimizer = optax.adam(learning_rate=0.1)
+
+
+@jax.jit
+def frequency_step(frequency_hz, opt_state, t, target, fixed_params):
+    loss_value, gradient = jax.value_and_grad(frequency_loss)(
+        frequency_hz, t, target, fixed_params
+    )
+    updates, opt_state = frequency_optimizer.update(gradient, opt_state, frequency_hz)
+    frequency_hz = optax.apply_updates(frequency_hz, updates)
+    return frequency_hz, opt_state, loss_value
 
 
 def fit_single_frequency(
-    initial_frequency_hz,
-    learning_rate=0.1,
-    n_updates=700,
-    log_every=25,
+    initial_frequency_hz, t, target, fixed_params, n_updates=500, log_every=25
 ):
     frequency_hz = jnp.asarray(float(initial_frequency_hz))
-    optimizer = optax.adam(learning_rate)
-    opt_state = optimizer.init(frequency_hz)
-
-    @jax.jit
-    def step(frequency_hz, opt_state):
-        loss_value, grad = jax.value_and_grad(complex_frequency_loss)(frequency_hz)
-        updates, opt_state = optimizer.update(grad, opt_state, frequency_hz)
-        frequency_hz = optax.apply_updates(frequency_hz, updates)
-        return frequency_hz, opt_state, loss_value, grad
-
+    opt_state = frequency_optimizer.init(frequency_hz)
     history = []
     for update in range(n_updates + 1):
         if update % log_every == 0 or update == n_updates:
-            loss_value, grad = jax.value_and_grad(complex_frequency_loss)(frequency_hz)
-            history.append(
-                (update, float(frequency_hz), float(loss_value), float(grad))
-            )
-
+            loss_value = frequency_loss(frequency_hz, t, target, fixed_params)
+            history.append((update, float(frequency_hz), float(loss_value)))
         if update < n_updates:
-            frequency_hz, opt_state, _, _ = step(frequency_hz, opt_state)
+            frequency_hz, opt_state, _ = frequency_step(
+                frequency_hz, opt_state, t, target, fixed_params
+            )
+    return np.asarray(history)
 
-    return history
 
+near_start_hz = known_frequency_hz - 0.5
+far_start_hz = known_frequency_hz - 10.0
+near_history = fit_single_frequency(near_start_hz, t, y_target, fixed_params)
+far_history = fit_single_frequency(far_start_hz, t, y_target, fixed_params)
 
-near_history = fit_single_frequency(438.0)
-far_history = fit_single_frequency(350.0)
-
-print("Single-frequency optimisation:")
 for label, history in (("near", near_history), ("far", far_history)):
-    _, frequency_hz, loss_value, grad = history[-1]
-    print(
-        f"  {label:>4s}: f={frequency_hz:8.3f} Hz, "
-        f"loss={loss_value:.3e}, grad={grad:.3e}"
-    )
-
-fig, ax = plt.subplots(figsize=(8, 3))
-for label, history in (("near start", near_history), ("far start", far_history)):
-    steps = [item[0] for item in history]
-    frequencies = [item[1] for item in history]
-    ax.plot(steps, frequencies, label=label)
-
-ax.axhline(float(target_params["frequency_hz"]), color="k", linestyle=":", label="target")
-ax.set_xlabel("Update")
-ax.set_ylabel("Frequency [Hz]")
-ax.set_title("Optimising one frequency through the complex recursion")
-ax.legend()
-ax.grid(True)
-fig.tight_layout()
+    _, final_frequency_hz, final_loss = history[-1]
+    print(f"{label}: frequency={final_frequency_hz:.4f} Hz, loss={final_loss:.3e}")
 
 # %% [markdown]
-# ## Exercise: find the convergence range
-#
-# Try one or two initial frequencies by hand in the cell above. Then fill in the
-# TODOs below to automate the experiment: run the same optimiser from several
-# starting frequencies and check which ones end near the target.
+# Look at the loss as a function of frequency. `vmap` evaluates the same loss
+# at each candidate frequency; `None` keeps the other inputs shared. You can
+# run this cell even if you skipped the optional batching example in JAX basics.
 
 # %%
-initial_frequencies = np.arange(434.0, 447.0, 1.0)
-target_frequency_hz = float(target_params["frequency_hz"])
-tolerance_hz = 0.5
+frequency_grid = jnp.linspace(known_frequency_hz - 15.0, known_frequency_hz + 5.0, 401)
+frequency_losses = jax.vmap(frequency_loss, in_axes=(0, None, None, None))(
+    frequency_grid, t, y_target, fixed_params
+)
 
+fig, axes = plt.subplots(1, 2, figsize=(11, 3.5))
+axes[0].plot(np.asarray(frequency_grid), np.asarray(frequency_losses))
+for label, history in (("near", near_history), ("far", far_history)):
+    axes[0].scatter(history[0, 1], history[0, 2], label=f"{label} start")
+    axes[1].plot(history[:, 0], history[:, 1], label=f"{label} start")
+axes[0].axvline(known_frequency_hz, color="k", linestyle=":", label="target")
+axes[0].set_xlabel("Candidate frequency [Hz]")
+axes[0].set_ylabel("Mean squared error")
+axes[0].set_title("The frequency loss landscape")
+axes[1].axhline(known_frequency_hz, color="k", linestyle=":", label="target")
+axes[1].set_xlabel("Update")
+axes[1].set_ylabel("Frequency [Hz]")
+axes[1].set_title("Where the optimiser ends up")
+for ax in axes:
+    ax.legend()
+fig.tight_layout()
+plt.show()
+
+# %% [markdown]
+# **Discuss:** does the farther start reach the target? A gradient describes
+# the local slope. For a finite sound, waveform MSE can have several minima
+# as frequency changes, so following that slope may lead to the wrong pitch.
+#
+# **Try it:** change `near_start_hz` and `far_start_hz` and rerun from their cell.
+# Explore the convergence range with the working scan below. The tolerance
+# defines success as ending within 0.5 Hz of the known target.
+
+# %%
+initial_frequencies = np.arange(known_frequency_hz - 6.0, known_frequency_hz + 7.0)
+tolerance_hz = 0.5
 frequency_scan = []
 
 for initial_frequency_hz in initial_frequencies:
-    # TODO: run `fit_single_frequency` from this starting frequency.
-    history = ...
-
-    # TODO: read the final frequency and loss from the last history entry.
-    _, final_frequency_hz, loss_value, _ = ...
-
-    # TODO: mark whether the final frequency is within `tolerance_hz`.
-    converged = ...
-
+    history = fit_single_frequency(initial_frequency_hz, t, y_target, fixed_params)
+    _, final_frequency_hz, final_loss = history[-1]
+    converged = abs(final_frequency_hz - known_frequency_hz) < tolerance_hz
     frequency_scan.append(
-        (initial_frequency_hz, final_frequency_hz, loss_value, converged)
+        (initial_frequency_hz, final_frequency_hz, final_loss, converged)
     )
-
-print(f"Target frequency: {target_frequency_hz:.1f} Hz")
-for initial_frequency_hz, final_frequency_hz, loss_value, converged in frequency_scan:
-    status = "works" if converged else "gets stuck"
     print(
-        f"{initial_frequency_hz:6.1f} Hz -> {final_frequency_hz:8.3f} Hz  "
-        f"loss={loss_value:.2e}  {status}"
+        f"{initial_frequency_hz:.1f} Hz -> {final_frequency_hz:.3f} Hz; "
+        f"loss={final_loss:.2e}; within tolerance={converged}"
     )
-
-fig, ax = plt.subplots(figsize=(8, 3))
-initials = np.asarray([item[0] for item in frequency_scan])
-finals = np.asarray([item[1] for item in frequency_scan])
-converged = np.asarray([item[3] for item in frequency_scan])
-
-ax.scatter(initials[converged], finals[converged], label="works")
-ax.scatter(initials[~converged], finals[~converged], label="gets stuck")
-ax.axhline(target_frequency_hz, color="k", linestyle=":", label="target")
-ax.set_xlabel("Initial frequency [Hz]")
-ax.set_ylabel("Final frequency [Hz]")
-ax.set_title("Which initial frequencies converge?")
-ax.legend()
-ax.grid(True)
-fig.tight_layout()
 
 # %% [markdown]
-# ## Things to try
+# **Explore further:** double `duration` and rerun from Section 1. How does
+# the frequency loss landscape change? Try a different damping rate too.
 #
-# - Change the frequencies in `initial_frequencies` and find the range that
-#   converges to the 440 Hz target.
-# - Increase the duration from `0.5` s to `1.0` s and run the scan again.
-# - Remove the exponential damping term.
-# - Replace waveform MSE with a spectral loss.
-# - In the complex-recursion example, compare initial frequencies near and far
-#   from the target.
+# The target values are available here so we can assess the fit. With recorded
+# audio, we would also need suitable model assumptions and validation data.
 #
-# The point is not only that gradients exist. The point is that audio losses can
-# become difficult even for a one-oscillator synthesiser.
+# ## 6. Optional: express the oscillator as a complex recursion
+#
+# A damped sinusoid also follows a one-step update:
+#
+# $$z_{n+1} = a z_n,\qquad a = e^{(-\gamma+i2\pi f)\Delta t},\qquad
+# z_0 = A e^{i\varphi}.$$
+#
+# Its **imaginary part** matches the sine convention used above:
+# $y_n = \operatorname{Im}(z_n)$. The magnitude of $a$ controls decay, and its
+# angle controls rotation per sample. No previous complex-recursion exercise
+# is needed for the main parts of this tutorial.
+#
+# `lax.scan` repeatedly calls a step that returns `(next_state, output)`.
+# We output the current state before advancing it, so sample zero matches $z_0$.
+
+
+# %%
+def complex_modal_synth(t, amplitude, gamma, frequency_hz, phase=0.0):
+    dt = t[1] - t[0]
+    a = jnp.exp((-gamma + 1j * 2.0 * jnp.pi * frequency_hz) * dt)
+    z0 = amplitude * jnp.exp(1j * phase)
+
+    def step(z, _):
+        return a * z, z
+
+    _, trajectory = jax.lax.scan(step, z0, xs=None, length=t.shape[0])
+    return trajectory.imag
+
+
+y_recursive = complex_modal_synth(
+    t, target_amplitude, target_gamma, known_frequency_hz, known_phase
+)
+print("Maximum waveform difference:", float(jnp.max(jnp.abs(y_recursive - y_target))))
+show_audio(y_recursive, sample_rate)
+
+# %% [markdown]
+# **Try it:** set a non-zero `known_phase` in Section 1 and rerun the file.
+# Do the direct and recursive synthesisers still agree? What happens if you
+# take `trajectory.real` instead of `trajectory.imag`?
+#
+# You have extended a one-parameter fit to two physical parameters, used
+# dictionaries and Optax, and tested how frequency initialisation affects
+# optimisation. Next, try learning phase, or replace waveform MSE with a
+# spectral loss and compare its frequency landscape.
+#
+# Further reading:
+# - [JAX automatic differentiation](https://docs.jax.dev/en/latest/automatic-differentiation.html)
+# - [Optax getting started](https://optax.readthedocs.io/en/latest/getting_started.html)

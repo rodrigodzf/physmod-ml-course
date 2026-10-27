@@ -21,6 +21,20 @@ See the [introductory slides](week01/slides/index.qmd) for the course schedule a
 uv sync
 ```
 
+## JAX Tutorial
+
+Session 3 starts with [JAX basics](week03/notebooks/jax_basics.py), the opening
+0 to 25 minute guided introduction using runnable `# %%` cells, before the
+longer differentiable-synthesis exercise. Open the file in an editor with
+Python cell support, select the course Python environment, and run the cells
+from top to bottom. It covers arrays, gradients, fitting a sinusoid's amplitude,
+and compilation, followed by an optional batching example.
+
+Continue with the [differentiable sinusoidal synth](week04/notebooks/differentiable_sinusoidal_synth.py).
+It builds on the introduction by fitting amplitude and damping, introducing
+parameter dictionaries and Optax, and exploring frequency initialisation.
+The complex-recursion section is optional.
+
 ## Render Slides
 
 Slides are rendered with [Quarto](https://quarto.org), a standalone CLI that is not a Python package and must be installed separately (e.g. `brew install quarto` on macOS, or via the installer at quarto.org).

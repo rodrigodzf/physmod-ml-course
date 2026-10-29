@@ -1,7 +1,7 @@
 # %% [markdown]
 # # Nonlinear tension modulation
 #
-# Week 3 derived the modal Kirchhoff-Carrier force
+# Week 4 derives the modal Kirchhoff-Carrier force
 #
 # $$\bar f_{\mathrm{nl},\mu}(\mathbf q) \propto \lambda_\mu^2 q_\mu \sum_\nu \lambda_\nu^2 q_\nu^2.$$
 #

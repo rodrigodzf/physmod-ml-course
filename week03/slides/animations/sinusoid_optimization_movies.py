@@ -16,7 +16,7 @@ jax.config.update("jax_enable_x64", True)
 
 ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_OUTPUT_DIR = (
-    ROOT / "week04" / "slides" / "animations" / "media" / "videos" / "sinusoid_optimization"
+    ROOT / "week03" / "slides" / "animations" / "media" / "videos" / "sinusoid_optimization"
 )
 
 SAMPLE_RATE = 8000
@@ -299,7 +299,7 @@ def render_movie(case_name, output_dir, fps=30, n_frames=180, dpi=140):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Render optimisation movies for the Week 4 sinusoid demo."
+        description="Render optimisation movies for the Week 3 sinusoid demo."
     )
     parser.add_argument(
         "--case",

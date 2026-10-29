@@ -67,6 +67,8 @@ def square(x):
 square_gradient = jax.grad(square)
 print("Function at 3:", square(3.0))
 print("Derivative at 3:", square_gradient(3.0))
+print("Derivative operations (JAXPR):")
+print(jax.make_jaxpr(square_gradient)(3.0))
 
 # %% [markdown]
 # `jax.grad(square)` returns a **function**. Calling `square_gradient(3.0)`
@@ -74,6 +76,9 @@ print("Derivative at 3:", square_gradient(3.0))
 # `grad` expects a scalar output, so later we will reduce all sample errors
 # to one loss value. This is automatic differentiation through the operations
 # in our function, rather than a finite-difference approximation.
+#
+# `make_jaxpr` displays the recorded operations. For this derivative, look for
+# multiplication by 2. It traces the function without compiling an executable.
 #
 # **Try it:** change `square` to return `x**3`, rerun the cell, and predict the
 # derivative at 3 before looking at the result.
@@ -183,6 +188,28 @@ plt.show()
 # cell each time. Do the updates converge, slow down, or grow? Restore `0.2`
 # before continuing.
 #
+# ### Visualise the loss landscape
+#
+# Evaluate the loss at several candidate amplitudes. Its minimum should occur
+# at the target amplitude. `vmap` applies the loss across the amplitude grid,
+# keeping time, target and frequency shared. Section 6 explains batching further.
+
+# %%
+amplitude_grid = jnp.linspace(0.0, 1.5, 100)
+batched_loss = jax.vmap(loss, in_axes=(0, None, None, None))
+loss_grid = batched_loss(amplitude_grid, time, target, frequency_hz)
+
+fig, ax = plt.subplots(figsize=(5, 3))
+ax.plot(np.asarray(amplitude_grid), np.asarray(loss_grid))
+ax.axvline(target_amplitude, color="black", linestyle=":", label="target amplitude")
+ax.set_xlabel("Amplitude")
+ax.set_ylabel("Mean squared error")
+ax.set_title("Amplitude loss landscape")
+ax.legend()
+fig.tight_layout()
+plt.show()
+
+# %% [markdown]
 # ## 5. Compile a working step with `jit`
 #
 # Put one update into a function, then compile it. The first call normally

@@ -32,9 +32,9 @@ format:
 
 # Recap: Differentiable Audio Models
 
-## The Week 4 Loop
+## The Week 3 Loop
 
-Last week we wrote a synthesiser as a differentiable function:
+In Week 3 we wrote a synthesiser as a differentiable function:
 
 $$
 \theta
@@ -231,7 +231,7 @@ The discrete recursion is an approximation to the continuous-time model.
 
 ## Revisiting the Pipeline
 
-Week 4:
+Week 3:
 
 $$
 \theta
@@ -1753,7 +1753,7 @@ Common tactics:
 
 . . .
 
-The same theme as Week 4:
+The same theme as Week 3:
 
 $$
 \text{differentiable}

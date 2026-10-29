@@ -819,26 +819,26 @@ Same state-space shape, different basis: **global modes diagonalise the physics*
 
 . . .
 
-**Next week:** nonlinearities make modal awkward (mode coupling everywhere). FDTD shines here, but neural methods can make nonlinearities tractable in the modal domain.
+**Next week:** write these models as JAX programs and use gradients to estimate their parameters from sound.
 
 # Wrapping Up
 
 ## Next Week
 
-**Session 3: Nonlinear Systems and Coupled Models**
+**Session 3: JAX Tutorial: Differentiable Programming for Audio**
 
-- Main focus: modal treatment of nonlinearities and mode coupling.
-- Collisions and excitation functions: brief tour of force laws and input maps.
-- Coupled subsystems: string + body
-- Differentiability: why it becomes interesting once nonlinearities are in.
+- Guided introduction to JAX arrays, gradients, and compilation.
+- Fit amplitude and damping in a small audio synthesiser.
+- Parameter dictionaries and Optax.
+- Frequency estimation: initialisation and local minima.
 
 ## Homework
 
-**Reading**
+**Reading for Session 4: Nonlinear Systems and Coupled Models (5 November)**
 
 - Bilbao, *Numerical Sound Synthesis*, Sec. 8.1, "The Kirchhoff--Carrier string model".
 
 **Optional**
 
 - As we look further next week into optimising parameters for physical and neural networks, we face many obstacles. Try to optimise the argument of the `sin` function. This can be done in 10 or so lines with JAX. What do you observe? Do you always converge to the right true value? Try with different initialisations.
-- Try to make sense on your own of `week02/notebooks/modal_identification.py`. We will look at JAX later on and how the autodiff works, but for now try to change some parameters and try to see where it fails.
+- Explore `week02/notebooks/modal_identification.py`. We will introduce JAX and automatic differentiation in the next session; for now, change some parameters and see where the fit fails.

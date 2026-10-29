@@ -175,7 +175,7 @@ time = time_full[:train_n_steps]
 # ## Hidden nonlinear force
 #
 # The target residual is the modal Kirchhoff-Carrier style cubic force used in
-# the Week 3 nonlinear string exercise:
+# the Week 4 nonlinear string exercise:
 #
 # $$
 # r_\mu(\mathbf q)

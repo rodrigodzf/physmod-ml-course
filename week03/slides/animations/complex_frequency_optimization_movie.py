@@ -16,7 +16,7 @@ jax.config.update("jax_enable_x64", True)
 ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_OUTPUT_DIR = (
     ROOT
-    / "week04"
+    / "week03"
     / "slides"
     / "animations"
     / "media"
@@ -336,7 +336,7 @@ def render_movie(output_dir, fps=30, n_frames=360, dpi=140):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Render the Week 4 complex-recursion frequency optimisation movie."
+        description="Render the Week 3 complex-recursion frequency optimisation movie."
     )
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--fps", type=int, default=30)

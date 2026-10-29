@@ -89,9 +89,9 @@ $$
 estimate the parameters that could have produced it.
 
 
-## Week 4 Loop, Revisited
+## Week 3 Loop, Revisited
 
-Week 4 introduced the differentiable fitting loop:
+Week 3 introduced the differentiable fitting loop:
 
 $$
 \theta

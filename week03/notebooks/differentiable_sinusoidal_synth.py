@@ -211,7 +211,18 @@ def train_step(params, opt_state, t, target, frequency_hz, phase):
     loss_value, grads = jax.value_and_grad(parameter_loss)(
         params, t, target, frequency_hz, phase
     )
-    updates, opt_state = optimizer.update(grads, opt_state, params)
+    updates, opt_state = optimizer.update(
+        grads,
+        opt_state,
+        params,
+        value=loss_value,
+        grad=grads,
+        value_fn=parameter_loss,
+        t=t,
+        target=target,
+        frequency_hz=frequency_hz,
+        phase=phase,
+    )
     params = optax.apply_updates(params, updates)
     return params, opt_state, loss_value
 

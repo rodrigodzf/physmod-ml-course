@@ -273,11 +273,11 @@ plt.show()
 # Now hold amplitude, damping and phase at their true values and learn only
 # frequency. This isolates the effect of initialisation from errors in the
 # other parameters. We will compare one starting point close to 440 Hz with
-# another farther away, using the same waveform MSE and optimiser.
+# another farther away, using the same waveform MSE and selected optimiser.
 
 
 # %%
-def frequency_loss(frequency_hz, t, target, fixed_params):
+def waveform_mse_loss(frequency_hz, t, target, fixed_params):
     prediction = damped_sinusoid(
         t,
         fixed_params["amplitude"],
@@ -293,28 +293,57 @@ fixed_params = {
     "gamma": jnp.asarray(target_gamma),
     "phase": jnp.asarray(known_phase),
 }
-frequency_optimizer = optax.adam(learning_rate=0.1)
+
+# %% [markdown]
+# Choose `"Adam"` or `"L-BFGS"` below, then rerun from this cell onwards to
+# update both fits, the three plots and the convergence scan. Rerunning this
+# cell also rebuilds the compiled step for the selected optimiser.
+#
+# L-BFGS uses a line search, so one update can evaluate the loss and gradient
+# several times. Equal update counts do not imply equal computational cost.
+
+# %%
+frequency_optimizer_name = "Adam"
+frequency_optimizer = optax.with_extra_args_support(
+    {
+        "Adam": optax.adam(learning_rate=0.1),
+        "L-BFGS": optax.lbfgs(),
+    }[frequency_optimizer_name]
+)
 
 
 @jax.jit
 def frequency_step(frequency_hz, opt_state, t, target, fixed_params):
-    loss_value, gradient = jax.value_and_grad(frequency_loss)(
-        frequency_hz, t, target, fixed_params
+    def loss_fn(candidate_frequency_hz):
+        return waveform_mse_loss(candidate_frequency_hz, t, target, fixed_params)
+
+    loss_value, gradient = jax.value_and_grad(loss_fn)(frequency_hz)
+    updates, opt_state = frequency_optimizer.update(
+        gradient,
+        opt_state,
+        frequency_hz,
+        value=loss_value,
+        grad=gradient,
+        value_fn=loss_fn,
     )
-    updates, opt_state = frequency_optimizer.update(gradient, opt_state, frequency_hz)
     frequency_hz = optax.apply_updates(frequency_hz, updates)
     return frequency_hz, opt_state, loss_value
 
 
 def fit_single_frequency(
-    initial_frequency_hz, t, target, fixed_params, n_updates=500, log_every=25
+    initial_frequency_hz,
+    t,
+    target,
+    fixed_params,
+    n_updates=500,
+    log_every=25,
 ):
     frequency_hz = jnp.asarray(float(initial_frequency_hz))
     opt_state = frequency_optimizer.init(frequency_hz)
     history = []
     for update in range(n_updates + 1):
         if update % log_every == 0 or update == n_updates:
-            loss_value = frequency_loss(frequency_hz, t, target, fixed_params)
+            loss_value = waveform_mse_loss(frequency_hz, t, target, fixed_params)
             history.append((update, float(frequency_hz), float(loss_value)))
         if update < n_updates:
             frequency_hz, opt_state, _ = frequency_step(
@@ -323,14 +352,18 @@ def fit_single_frequency(
     return np.asarray(history)
 
 
+# %%
 near_start_hz = known_frequency_hz - 0.5
 far_start_hz = known_frequency_hz - 10.0
 near_history = fit_single_frequency(near_start_hz, t, y_target, fixed_params)
 far_history = fit_single_frequency(far_start_hz, t, y_target, fixed_params)
-
-for label, history in (("near", near_history), ("far", far_history)):
+frequency_runs = (("near", near_history), ("far", far_history))
+for label, history in frequency_runs:
     _, final_frequency_hz, final_loss = history[-1]
-    print(f"{label}: frequency={final_frequency_hz:.4f} Hz, loss={final_loss:.3e}")
+    print(
+        f"{frequency_optimizer_name}, {label}: "
+        f"frequency={final_frequency_hz:.4f} Hz, loss={final_loss:.3e}"
+    )
 
 # %% [markdown]
 # Look at the loss as a function of frequency. `vmap` evaluates the same loss
@@ -339,25 +372,50 @@ for label, history in (("near", near_history), ("far", far_history)):
 
 # %%
 frequency_grid = jnp.linspace(known_frequency_hz - 15.0, known_frequency_hz + 5.0, 401)
-frequency_losses = jax.vmap(frequency_loss, in_axes=(0, None, None, None))(
+frequency_losses = jax.vmap(waveform_mse_loss, in_axes=(0, None, None, None))(
     frequency_grid, t, y_target, fixed_params
 )
 
-fig, axes = plt.subplots(1, 2, figsize=(11, 3.5))
-axes[0].plot(np.asarray(frequency_grid), np.asarray(frequency_losses))
-for label, history in (("near", near_history), ("far", far_history)):
-    axes[0].scatter(history[0, 1], history[0, 2], label=f"{label} start")
-    axes[1].plot(history[:, 0], history[:, 1], label=f"{label} start")
-axes[0].axvline(known_frequency_hz, color="k", linestyle=":", label="target")
-axes[0].set_xlabel("Candidate frequency [Hz]")
-axes[0].set_ylabel("Mean squared error")
+fig, axes = plt.subplots(1, 3, figsize=(16.5, 3.5))
+for ax in (axes[0], axes[2]):
+    ax.plot(np.asarray(frequency_grid), np.asarray(frequency_losses), color="0.6")
+    ax.axvline(known_frequency_hz, color="k", linestyle=":", label="target")
+    ax.set_xlabel("Candidate frequency [Hz]")
+    ax.set_ylabel("Mean squared error")
+for colour, (label, history) in zip(("C0", "C1"), frequency_runs):
+    axes[0].scatter(
+        history[0, 1], history[0, 2], color=colour, label=f"{label} start"
+    )
+    axes[1].plot(
+        history[:, 0], history[:, 1], color=colour, label=f"{label} start"
+    )
+    axes[2].scatter(
+        history[0, 1],
+        history[0, 2],
+        facecolors="none",
+        edgecolors=colour,
+        s=70,
+        label=f"{label} start",
+        zorder=3,
+    )
+    axes[2].scatter(
+        history[-1, 1],
+        history[-1, 2],
+        color=colour,
+        marker="X",
+        s=70,
+        label=f"{label} after {int(history[-1, 0])} updates",
+        zorder=4,
+    )
 axes[0].set_title("The frequency loss landscape")
 axes[1].axhline(known_frequency_hz, color="k", linestyle=":", label="target")
 axes[1].set_xlabel("Update")
 axes[1].set_ylabel("Frequency [Hz]")
 axes[1].set_title("Where the optimiser ends up")
+axes[2].set_title("Start and end on the loss landscape")
 for ax in axes:
     ax.legend()
+fig.suptitle(f"Frequency estimation with {frequency_optimizer_name}")
 fig.tight_layout()
 plt.show()
 

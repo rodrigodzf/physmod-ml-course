@@ -73,11 +73,12 @@ def multiresolution_stft_loss(prediction_spectra, target_spectra):
     return jnp.mean(jnp.stack(losses))
 
 
-def spectral_ot_loss(prediction_magnitude, target_magnitude, frequency_bins_hz):
-    def spectral_mass(magnitude):
-        power = magnitude**2
-        return power / jnp.maximum(power.sum(axis=-1, keepdims=True), 1e-30)
+def spectral_mass(magnitude):
+    power = magnitude**2
+    return power / jnp.maximum(power.sum(axis=-1, keepdims=True), 1e-30)
 
+
+def spectral_ot_loss(prediction_magnitude, target_magnitude, frequency_bins_hz):
     cdf_difference = jnp.cumsum(
         spectral_mass(prediction_magnitude) - spectral_mass(target_magnitude), axis=-1
     )
@@ -143,6 +144,55 @@ plt.show()
 # `log_epsilon`. SOT can also have finite-window and frequency-bin artefacts;
 # a smooth-looking curve is not a proof of convexity.
 #
+# ### Where does W1 come from?
+#
+# Compare 430 Hz with the 440 Hz target in one STFT frame. Both spectra have
+# total mass 1, but accumulate it at different frequencies. The shaded area
+# between their CDFs is that frame's W1; the loss above averages over frames.
+# These plots zoom around the peaks; W1 is computed over the full frequency
+# grid. Change `cdf_frequency_hz` or `cdf_frame` and rerun this cell.
+
+# %%
+cdf_frequency_hz = 430.0
+cdf_frame = 0
+cdf_prediction = damped_sinusoid(
+    t, target_amplitude, target_gamma, cdf_frequency_hz, candidate_phase
+)
+cdf_prediction_spectrum = magnitude_stft(cdf_prediction, sot_window_size)[cdf_frame]
+cdf_target_spectrum = target_spectra[sot_window_size][cdf_frame]
+cdf_frame_w1 = float(spectral_ot_loss(
+    cdf_prediction_spectrum, cdf_target_spectrum, sot_frequency_bins_hz
+))
+
+fig_cdf, axes_cdf = plt.subplots(1, 2, figsize=(10, 3.3), sharex=True)
+cdfs = []
+for spectrum, label in (
+    (cdf_prediction_spectrum, f"Candidate: {cdf_frequency_hz:g} Hz"),
+    (cdf_target_spectrum, f"Target: {target_frequency_hz:g} Hz"),
+):
+    mass = np.asarray(spectral_mass(spectrum))
+    cdf = np.cumsum(mass)
+    cdfs.append(cdf)
+    axes_cdf[0].step(sot_frequency_bins_hz, mass, where="post", label=label)
+    axes_cdf[1].step(sot_frequency_bins_hz, cdf, where="post", label=label)
+axes_cdf[0].set(title="Normalised power spectra", ylabel="Spectral mass per bin")
+axes_cdf[1].fill_between(
+    sot_frequency_bins_hz, cdfs[0], cdfs[1], step="post",
+    color="0.5", alpha=0.25, label="Area between CDFs",
+)
+axes_cdf[1].set(
+    title=f"Frame {cdf_frame}: W1 = {cdf_frame_w1:.2f} Hz",
+    ylabel="Cumulative spectral mass", ylim=(-0.02, 1.02),
+)
+for ax in axes_cdf:
+    ax.set_xlim(min(cdf_frequency_hz, target_frequency_hz) - 20,
+                max(cdf_frequency_hz, target_frequency_hz) + 20)
+    ax.set_xlabel("Frequency [Hz]")
+    ax.legend()
+fig_cdf.tight_layout()
+plt.show()
+
+# %% [markdown]
 # ## 3. Extra: spectral OT and string length
 #
 # For an ideal string with fixed tension $T$ and linear density $\mu$,

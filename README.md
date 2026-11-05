@@ -62,6 +62,12 @@ It builds on the introduction by fitting amplitude and damping, introducing
 parameter dictionaries and Optax, and exploring frequency initialisation.
 The complex-recursion section is optional.
 
+For the Audio Losses slides, use the short
+[audio loss landscapes notebook](week03/notebooks/audio_loss_landscapes.py).
+It compares waveform MSE, multi-resolution STFT and one-dimensional spectral
+optimal transport, with an editable phase setting and optional examples
+showing spectral OT versus string length and the effects of noise and harmonics.
+
 ### Session Sequence
 
 | Time | Slides and coding |

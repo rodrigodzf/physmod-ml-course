@@ -1,0 +1,18 @@
+{
+  "name": "modal-training-loop",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@xyflow/svelte": "2.0.2",
+    "svelte": "5.58.0"
+  },
+  "devDependencies": {
+    "@mathjax/src": "^4.1.3",
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "vite": "^8.0.0",
+    "vite-plugin-singlefile": "^2.3.4"
+  }
+}

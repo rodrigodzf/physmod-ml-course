@@ -1,2 +1,3 @@
 project:
   type: default
+  pre-render: week05/widgets/modal-training-loop/build-for-quarto.ts

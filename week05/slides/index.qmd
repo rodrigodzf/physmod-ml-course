@@ -3,6 +3,8 @@ title: "Neural ODEs"
 subtitle: "Differentiable Physical Modelling and Machine Learning for Sound Synthesis"
 author: "Rodrigo Diaz"
 date: "2026-11-12"
+resources:
+  - widgets/modal-training-loop.html
 execute-dir: file
 execute:
   cache: false
@@ -897,6 +899,26 @@ $$
 The extra $f^{n+1}$ term comes from the final half kick.
 
 # Neural ODEs
+
+## From string PDE to sound {#modal-training-loop .nostretch}
+
+```{=html}
+<iframe src="widgets/modal-training-loop.html#diagram"
+        title="Compare analytic and neural restoring forces for a string fitted to a waveform"
+        style="display: block; width: 100%; height: 570px; max-height: none; border: 0;"></iframe>
+```
+
+::: {.notes}
+Select **Analytic force** for the Kirchhoff–Carrier stretching law from Week 4. The unknowns are resting tension $T_0$ and damping rate $\gamma$. The mass per unit length $\rho$ (in kg/m), axial stiffness $EA$, length $L$, applied force and initial state are known. The nonlinear restoring term $f_{\rm nl}(w)=-T_{\rm nl}(w)\,w_{xx}$ enters the PDE as $-f_{\rm nl}(w)$.
+
+Select **Neural force** to leave $f_{\rm nl}(w)$ unspecified in the PDE. After sine projection, the MLP $\mathcal N_\theta(\mathbf q)$ takes the retained modal displacements and supplies one nonlinear force per mode. Fit the network parameters $\theta$ jointly with $T_0$ and $\gamma$ from the waveform loss.
+
+For the fixed ends, use $\phi_\mu(x)=\sqrt{2/L}\sin(k_\mu x)$ with $k_\mu=\mu\pi/L$ and $w(x,t)\approx\sum_\mu q_\mu(t)\phi_\mu(x)$. Project the drive to get $\bar f_{\rm ext,\mu}(t)=\int_0^L f_{\rm ext}(x,t)\phi_\mu(x)\,\mathrm{d}x$. In the analytic model, projection gives $\bar f_{\rm nl,\mu}=T_{\rm nl}(w)\,k_\mu^2q_\mu$. The scalar $T_{\rm nl}(w)$ couples the modes.
+
+The sine projection sketch shows three weighted mode shapes at a fixed time, as in the Week 2 basis expansion. The orthonormal modes give $q_\mu(t)=\int_0^L w(x,t)\,\phi_\mu(x)\,\mathrm{d}x$. The blue loop reuses the two latest displacements for the next time step. Evaluate the projected drive and the nonlinear restoring force at the current sample. The fitted parameters stay fixed throughout the rollout.
+
+The readout sketch shows three example signals over time. Each contributes $C_\mu q_\mu^n$ at the pickup, where $C_\mu=\phi_\mu(x_{\rm out})$ for a displacement readout at $x_{\rm out}$. Sum the contributions at each time step. Differentiate the pickup waveform loss through the solver, then feed the updated parameters back into the time stepper for the next rollout.
+:::
 
 ## Neural ODE: Definition
 

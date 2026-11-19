@@ -28,3 +28,8 @@ Install [Quarto](https://quarto.org) separately, then render a slide deck by pas
 ```sh
 quarto render path/to/slides/index.qmd
 ```
+
+The Week 5 deck uses Node.js and npm for its interactive diagram. Node.js 24
+works with the pinned build dependencies. Both `quarto render` and
+`quarto preview` build the diagram automatically, installing dependencies
+from the lockfile when needed.
